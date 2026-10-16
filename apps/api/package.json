@@ -5,13 +5,16 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "selftest": "tsx scripts/selftest.mts"
+    "selftest": "tsx scripts/selftest.mts",
+    "test:auth": "zsh scripts/authtest.sh; tsx scripts/authtest-cleanup.mts"
   },
   "dependencies": {
+    "@better-auth/expo": "^1.7.10",
     "@hono/node-server": "^2.1.3",
     "@hono/zod-openapi": "^1.6.3",
     "@neondatabase/serverless": "^1.2.0",
     "@scalar/hono-api-reference": "^0.12.12",
+    "better-auth": "^1.7.10",
     "dotenv": "^18.0.8",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.13",
