@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   pgTable, pgEnum, uuid, text, varchar, integer, boolean, timestamp,
   doublePrecision, jsonb, index, uniqueIndex, unique, check, foreignKey,
-  customType, bigint,
+  customType, bigint, primaryKey,
 } from 'drizzle-orm/pg-core';
 
 // ---------- Location type ----------
@@ -260,3 +260,14 @@ export const rateLimits = pgTable('rate_limits', {
   count: integer('count').notNull(),
   lastRequest: bigint('last_request', { mode: 'number' }).notNull(),
 });
+
+// Usage quotas and daily cost caps (see src/protect/quota.ts)
+export const usageCounters = pgTable('usage_counters', {
+  scope: text('scope').notNull(),   // "user:<id>", "phone:+1...", or "global"
+  action: text('action').notNull(), // e.g. "sms", "llm_message", "budget_sms"
+  windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+  count: integer('count').notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.scope, t.action, t.windowStart] }),
+  index('usage_counters_window_idx').on(t.windowStart),
+]);

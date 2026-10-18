@@ -7,9 +7,9 @@ import { env } from '../env.js';
  * Production: plug in an SMS provider here (e.g. Twilio) before launch.
  */
 export async function sendSignInCode(phoneNumber: string, code: string): Promise<void> {
-  if (env.NODE_ENV !== 'production') {
+  if (env.NODE_ENV === 'development' && env.DEV_PRINT_OTP === '1') {
     console.log(`\n  [DEV] Sign-in code for ${phoneNumber}: ${code}\n`);
     return;
   }
-  throw new Error('No SMS provider configured — add one in src/auth/send-code.ts');
+  throw new Error('No SMS provider configured (or DEV_PRINT_OTP=1 not set in development) — see src/auth/send-code.ts');
 }

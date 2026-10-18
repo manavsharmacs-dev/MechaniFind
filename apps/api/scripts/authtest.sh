@@ -1,8 +1,9 @@
 #!/bin/zsh
 # End-to-end sign-in test. Starts its own API server, cleans up after itself.
+# Simulates a proxy (TRUST_PROXY_HEADER) so the test can act as many different IPs.
 cd "$(dirname "$0")/.."
 LOG=$(mktemp); JAR=$(mktemp)
-npx tsx src/index.ts > "$LOG" 2>&1 &
+TRUST_PROXY_HEADER=x-forwarded-for npx tsx src/index.ts > "$LOG" 2>&1 &
 SERVER=$!
 trap 'kill $SERVER 2>/dev/null; rm -f "$LOG" "$JAR"' EXIT
 for i in {1..30}; do curl -s localhost:3000/ >/dev/null && break; sleep 0.5; done
@@ -31,7 +32,7 @@ send $P2 10.0.0.2 >/dev/null; C2=$(code_for $P2)
 R=$(verify $P2 $C2 10.0.0.2 ',"role":"admin"')
 ROLE=$(curl -s -b "$JAR" localhost:3000/me | grep -o '"role":"[a-z_]*"')
 [[ "$R" != "200" || "$ROLE" == '"role":"driver"' ]] && echo "PASS  can't sign up as admin (status $R, ${ROLE:-no session})" || echo "FAIL  became $ROLE"
-pass "can't change own role later"        "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR" -H 'origin: http://localhost:3000' -X POST $B/update-user -d '{"role":"admin"}')" 400
+pass "can't change own role later (route doesn't exist)"        "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR" -H 'origin: http://localhost:3000' -X POST $B/update-user -d '{"role":"admin"}')" 404
 
 # 3. Three wrong guesses kill the code
 send $P3 10.0.0.3 >/dev/null; C3=$(code_for $P3)
