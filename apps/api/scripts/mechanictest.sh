@@ -3,7 +3,7 @@
 cd "$(dirname "$0")/.."
 npx tsx scripts/authtest-cleanup.mts >/dev/null
 LOG=$(mktemp); JAR=$(mktemp); JAR2=$(mktemp)
-PORT=3999 TRUST_PROXY_HEADER=x-forwarded-for npx tsx src/index.ts > "$LOG" 2>&1 &
+PORT=3999 LOCATION_PING_SECONDS=1 TRUST_PROXY_HEADER=x-forwarded-for npx tsx src/index.ts > "$LOG" 2>&1 &
 SERVER=$!
 trap 'kill $SERVER 2>/dev/null; rm -f "$LOG" "$JAR" "$JAR2"; npx tsx scripts/authtest-cleanup.mts >/dev/null' EXIT
 for i in {1..40}; do curl -s localhost:3999/ >/dev/null && break; sleep 0.25; done
@@ -48,21 +48,47 @@ pass "account is now a mechanic"                 "$(curl -s -b "$JAR" $U/me | gr
 pass "can't sign up twice"                       "$(prof "$JAR" POST "$GOOD")" 409
 pass "can read own profile"                      "$(st -b "$JAR" $U/mechanic/profile)" 200
 
-echo "--- Once-a-week editing"
-pass "rejected edit (bad data) refused"          "$(prof "$JAR" PATCH '{"serviceRadiusMiles":999}')" 400
-pass "...and doesn't use up the weekly change"   "$(prof "$JAR" PATCH '{"serviceRadiusMiles":60}')" 200
-R=$(curl -s -w ' %{http_code}' "${H[@]}" -b "$JAR" -X PATCH $U/mechanic/profile -d '{"calloutFeeCents":20000}')
-pass "second edit in the same week refused"      "${R##* }" 429
-pass "...and says when the next edit is allowed" "$(echo $R | grep -o '"nextEditAt":"20[0-9-]*T' | cut -c1-14)" '"nextEditAt":"'
-pass "profile shows next-edit date to the app"   "$(curl -s -b "$JAR" $U/mechanic/profile | grep -o '"nextEditAt":null')" ""
-weekpass() { npx tsx -e "import('./src/db/index.js').then(async ({db,pool})=>{const {sql}=await import('drizzle-orm');await db.execute(sql\`update mechanic_profiles set profile_edited_at = now() - interval '8 days' where user_id = (select id from users where phone_number = '$P')\`);await pool.end();})"; }
+echo "--- Availability while pending"
+avail() { curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR" -X POST $U/mechanic/availability -d "$1"; }
+ping() { curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR" -X POST $U/mechanic/location -d '{"location":{"lat":42.04,"lng":-88.29}}'; }
+LOC='"location":{"lat":42.0354,"lng":-88.2812}'
+pass "pending mechanic can't go online"          "$(avail "{\"available\":true,$LOC}")" 403
+pass "going offline is always allowed"           "$(avail '{"available":false}')" 200
+pass "location pings refused while offline"      "$(ping)" 409
 
-echo "--- Approval"
+echo "--- Editing"
+pass "rejected edit (bad data) refused"          "$(prof "$JAR" PATCH '{"serviceRadiusMiles":999}')" 400
+pass "change price"                              "$(prof "$JAR" PATCH '{"calloutFeeCents":17500}')" 200
+pass "change price again right away"             "$(prof "$JAR" PATCH '{"calloutFeeCents":20000}')" 200
+pass "change radius and specialties any time"    "$(prof "$JAR" PATCH '{"serviceRadiusMiles":60,"specialties":["engine","brakes"]}')" 200
+pass "price actually saved"                      "$(curl -s -b "$JAR" $U/mechanic/profile | grep -o '"calloutFeeCents":20000')" '"calloutFeeCents":20000'
+weekpass() { npx tsx -e "import('./src/db/index.js').then(async ({db,pool})=>{const {sql}=await import('drizzle-orm');await db.execute(sql\`update mechanic_profiles set name_changed_at = now() - interval '8 days' where user_id = (select id from users where phone_number = '$P')\`);await pool.end();})"; }
+
+echo "--- Approval & business name"
 npm run -s mechanic:approve -- $P >/dev/null
 pass "admin approval works"                      "$(curl -s -b "$JAR" $U/mechanic/profile | grep -o '"status":"[a-z]*"')" '"status":"approved"'
-pass "approval didn't change the radius edit"    "$(curl -s -b "$JAR" $U/mechanic/profile | grep -o '"serviceRadiusMiles":60')" '"serviceRadiusMiles":60'
 pass "can't approve yourself via edit"           "$(prof "$JAR" PATCH '{"isApproved":true}')" 400
+pass "changing price keeps approval"             "$(curl -s "${H[@]}" -b "$JAR" -X PATCH $U/mechanic/profile -d '{"calloutFeeCents":22500}' | grep -o '"status":"[a-z]*"')" '"status":"approved"'
+pass "renaming the business needs re-approval"   "$(curl -s "${H[@]}" -b "$JAR" -X PATCH $U/mechanic/profile -d '{"businessName":"Joe Diesel LLC"}' | grep -o '"status":"[a-z]*"')" '"status":"pending"'
+R=$(curl -s -w ' %{http_code}' "${H[@]}" -b "$JAR" -X PATCH $U/mechanic/profile -d '{"businessName":"Another Name Inc"}')
+pass "second rename in the same week refused"    "${R##* }" 429
+pass "...and says when the next rename is allowed" "$(echo $R | grep -o '"nextNameChangeAt":"20' )" '"nextNameChangeAt":"20'
+pass "prices still editable during the name wait" "$(prof "$JAR" PATCH '{"calloutFeeCents":25000}')" 200
+pass "re-sending the SAME name isn't a rename"   "$(prof "$JAR" PATCH '{"businessName":"Joe Diesel LLC"}')" 200
 weekpass
-pass "a week later: editing the fee keeps approval" "$(curl -s "${H[@]}" -b "$JAR" -X PATCH $U/mechanic/profile -d '{"calloutFeeCents":20000}' | grep -o '"status":"[a-z]*"')" '"status":"approved"'
-weekpass
-pass "a week later: renaming the business needs re-approval" "$(curl -s "${H[@]}" -b "$JAR" -X PATCH $U/mechanic/profile -d '{"businessName":"Totally Different LLC"}' | grep -o '"status":"[a-z]*"')" '"status":"pending"'
+pass "a week later: rename allowed again"        "$(prof "$JAR" PATCH '{"businessName":"Another Name Inc"}')" 200
+
+echo "--- Availability once approved"
+npm run -s mechanic:approve -- $P >/dev/null
+pass "can't go online without sending location"  "$(avail '{"available":true}')" 400
+pass "can't sneak in extra fields"               "$(avail "{\"available\":true,$LOC,\"isApproved\":true}")" 400
+pass "approved mechanic goes online"             "$(curl -s "${H[@]}" -b "$JAR" -X POST $U/mechanic/availability -d "{\"available\":true,$LOC}" | grep -o '"isAvailable":true')" '"isAvailable":true'
+sleep 1.1
+pass "location ping accepted while online"       "$(ping)" 200
+pass "second ping too soon is refused"           "$(ping)" 429
+sleep 1.1
+pass "ping accepted again after the wait"        "$(ping)" 200
+pass "location outside the US refused"           "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR" -X POST $U/mechanic/location -d '{"location":{"lat":51.5,"lng":-0.12}}')" 400
+npm run -s mechanic:approve -- $P --revoke >/dev/null
+pass "revoking approval forces them offline"     "$(curl -s -b "$JAR" $U/mechanic/profile | grep -o '"isAvailable":false')" '"isAvailable":false'
+pass "...and they can't go back online"          "$(avail "{\"available\":true,$LOC}")" 403

@@ -44,19 +44,19 @@ export function PrimaryButton({
       onPress={onPress}
       style={({ pressed }) => [styles.button, pressed && styles.buttonPressed, disabled && styles.buttonDisabled]}
     >
-      {loading ? <ActivityIndicator color={colors.signWhite} /> : <Text style={styles.buttonLabel}>{label}</Text>}
+      {loading ? <ActivityIndicator color={colors.onBrand} /> : <Text style={styles.buttonLabel}>{label}</Text>}
     </Pressable>
   );
 }
 
-export function TextButton({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) {
+export function TextButton({ label, onPress, disabled = false, center = false }: { label: string; onPress: () => void; disabled?: boolean; center?: boolean }) {
   return (
     <Pressable
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
       hitSlop={8}
-      style={({ pressed }) => [styles.textButton, pressed && { opacity: 0.6 }]}
+      style={({ pressed }) => [styles.textButton, center && { alignSelf: 'center' }, pressed && { opacity: 0.6 }]}
     >
       <Text style={[styles.textButtonLabel, disabled && styles.textButtonDisabled]}>{label}</Text>
     </Pressable>
@@ -81,49 +81,49 @@ export function Body({ children, muted = false }: PropsWithChildren<{ muted?: bo
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.concrete },
+  safe: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
   scroll: { flexGrow: 1, padding: space.m, gap: space.m },
 
   sign: {
-    backgroundColor: colors.signGreen,
+    backgroundColor: colors.primary,
     borderRadius: 14,
     padding: 6,
     marginBottom: space.s,
   },
   signInset: {
     borderWidth: 3,
-    borderColor: colors.signWhite,
+    borderColor: colors.brand,
     borderRadius: 10,
     paddingHorizontal: space.m,
     paddingTop: space.m,
     paddingBottom: space.m - 2,
     gap: space.xs,
   },
-  signTitle: { fontFamily: fonts.heavy, fontSize: 36, lineHeight: 42, color: colors.signWhite },
-  signSubtitle: { fontFamily: fonts.regular, fontSize: 19, lineHeight: 26, color: colors.signWhite },
+  signTitle: { fontFamily: fonts.heavy, fontSize: 36, lineHeight: 42, color: colors.text },
+  signSubtitle: { fontFamily: fonts.regular, fontSize: 19, lineHeight: 26, color: colors.textMuted },
 
-  label: { fontFamily: fonts.bold, fontSize: 18, lineHeight: 24, color: colors.asphalt },
-  body: { fontFamily: fonts.regular, fontSize: 17, lineHeight: 25, color: colors.asphalt },
-  bodyMuted: { color: colors.road },
+  label: { fontFamily: fonts.bold, fontSize: 18, lineHeight: 24, color: colors.text },
+  body: { fontFamily: fonts.regular, fontSize: 17, lineHeight: 25, color: colors.text },
+  bodyMuted: { color: colors.textMuted },
 
   button: {
     minHeight: 60,
     borderRadius: 10,
-    backgroundColor: colors.signGreen,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: space.m,
   },
-  buttonPressed: { backgroundColor: colors.signGreenPressed },
+  buttonPressed: { backgroundColor: colors.brandPressed },
   buttonDisabled: { opacity: 0.45 },
-  buttonLabel: { fontFamily: fonts.bold, fontSize: 20, color: colors.signWhite },
+  buttonLabel: { fontFamily: fonts.bold, fontSize: 20, color: colors.onBrand },
 
   textButton: { minHeight: 48, justifyContent: 'center', alignSelf: 'flex-start' },
   textButtonLabel: {
-    fontFamily: fonts.bold, fontSize: 17, color: colors.signGreen, textDecorationLine: 'underline',
+    fontFamily: fonts.bold, fontSize: 17, color: colors.brand, textDecorationLine: 'underline',
   },
-  textButtonDisabled: { color: colors.road, textDecorationLine: 'none' },
+  textButtonDisabled: { color: colors.textMuted, textDecorationLine: 'none' },
 
-  error: { fontFamily: fonts.bold, fontSize: 17, lineHeight: 24, color: colors.stopRed },
+  error: { fontFamily: fonts.bold, fontSize: 17, lineHeight: 24, color: colors.error },
 });

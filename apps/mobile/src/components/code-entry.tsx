@@ -91,7 +91,7 @@ export function CodeEntry({
           autoComplete={method === 'phone' ? 'sms-otp' : 'one-time-code'}
           maxLength={6}
           placeholder="000000"
-          placeholderTextColor={colors.shoulder}
+          placeholderTextColor={colors.border}
           accessibilityLabel="6-digit code"
           autoFocus
         />
@@ -124,14 +124,14 @@ const styles = StyleSheet.create({
   code: {
     minHeight: 72,
     borderWidth: 2,
-    borderColor: colors.shoulder,
+    borderColor: colors.border,
     borderRadius: 10,
-    backgroundColor: colors.signWhite,
+    backgroundColor: colors.card,
     paddingHorizontal: space.m,
     fontFamily: fonts.heavy,
     fontSize: 34,
     letterSpacing: 10,
-    color: colors.asphalt,
+    color: colors.text,
   },
-  codeError: { borderColor: colors.stopRed },
+  codeError: { borderColor: colors.error },
 });

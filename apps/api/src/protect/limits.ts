@@ -47,7 +47,14 @@ export const QUOTA = {
   verifyAttemptsPerPhonePerHour: 10, // with 6-digit codes: ~1 in 100,000 odds per hour per phone
   llmMessagesPerUserPerDay: 40,     // ready for the AI assistant
   breakdownRequestsPerUserPerDay: 5,// ready for breakdown requests
-  profileEditIntervalDays: 7, // mechanics can change their profile once a week
+  nameChangeIntervalDays: 7,       // business name: once a week
+  profileEditsPerUserPerDay: 30,   // everything else (prices, radius...): generous abuse cap
+};
+
+// ---------- Mechanic availability ----------
+export const AVAILABILITY = {
+  locationPingSeconds: env.LOCATION_PING_SECONDS ?? 30, // a mechanic's phone may report location at most this often
+  mobileStaleMinutes: 30,       // no ping for this long = treated as offline for matching (mobile only)
 };
 
 // ---------- Cost caps (whole app, per day). When hit, that feature pauses. ----------

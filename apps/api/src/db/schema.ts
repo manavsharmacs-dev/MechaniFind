@@ -133,7 +133,7 @@ export const mechanicProfiles = pgTable('mechanic_profiles', {
   isAvailable: boolean('is_available').notNull().default(false),
   isApproved: boolean('is_approved').notNull().default(false), // only an admin endpoint may change this
   lastLocationAt: timestamp('last_location_at', { withTimezone: true }),
-  profileEditedAt: timestamp('profile_edited_at', { withTimezone: true }), // limits edits to 1 per week
+  nameChangedAt: timestamp('name_changed_at', { withTimezone: true }), // business name: 1 change per week
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [

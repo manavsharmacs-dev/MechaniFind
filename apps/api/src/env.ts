@@ -26,6 +26,7 @@ const schema = z.object({
   RATE_IP_PER_MIN: z.coerce.number().int().min(1).optional(),
   RATE_USER_PER_MIN: z.coerce.number().int().min(1).optional(),
   SCANNER_BAD_LIMIT: z.coerce.number().int().min(1).optional(),
+  LOCATION_PING_SECONDS: z.coerce.number().int().min(1).optional(), // tests only
 });
 
 const parsed = schema.safeParse(process.env);

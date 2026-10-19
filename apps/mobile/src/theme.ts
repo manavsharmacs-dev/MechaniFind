@@ -1,14 +1,19 @@
-// Borrowed from US interstate guide signs: sign green, sign white, asphalt.
-// Light background on purpose — drivers use this outdoors, often in sun.
+// MechaniFind palette: dark, industrial, with Electric Orange as the one loud color.
+// Contrast notes: text on orange buttons is Deep Navy (white on this orange is too
+// faint to read reliably); all text colors below pass WCAG AA on the dark backgrounds.
 export const colors = {
-  signGreen: '#00663F',
-  signGreenPressed: '#004D2F',
-  signWhite: '#FFFFFF',
-  asphalt: '#1F2427',     // main text
-  road: '#545D63',        // secondary text
-  concrete: '#EDEFED',    // screen background
-  shoulder: '#BFC5C1',    // field borders
-  stopRed: '#A8201A',     // errors
+  primary: '#0B1623',      // Deep Navy — headers, sign panel
+  brand: '#FF6B21',        // Electric Orange — buttons, links, highlights
+  brandPressed: '#E0561A', // orange, pressed
+  onBrand: '#0B1623',      // text/icons on orange
+  background: '#080D12',   // Near Black — screens
+  card: '#15212D',         // Slate — cards, inputs
+  border: '#2A3A49',       // subtle edges on cards/inputs (derived from Slate)
+  text: '#F5F7F9',         // Off White — primary text
+  textMuted: '#8E9BA8',    // Steel Gray — secondary text, placeholders
+  success: '#2DD881',
+  warning: '#FFB020',
+  error: '#F04444',
 } as const;
 
 // Overpass is an open-source typeface modeled on Highway Gothic, the lettering on US road signs.

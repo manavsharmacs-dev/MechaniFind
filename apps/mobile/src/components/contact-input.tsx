@@ -53,7 +53,7 @@ export function ContactInput({
           onChangeText={(t) => onChange(isPhone ? formatUSPhone(t) : t)}
           onSubmitEditing={onSubmit}
           placeholder={isPhone ? '(815) 555-0123' : 'you@example.com'}
-          placeholderTextColor={colors.road}
+          placeholderTextColor={colors.textMuted}
           keyboardType={isPhone ? 'phone-pad' : 'email-address'}
           textContentType={isPhone ? 'telephoneNumber' : 'emailAddress'}
           autoComplete={isPhone ? 'tel' : 'email'}
@@ -73,30 +73,30 @@ const styles = StyleSheet.create({
   toggle: {
     flexDirection: 'row',
     borderWidth: 2,
-    borderColor: colors.shoulder,
+    borderColor: colors.border,
     borderRadius: 10,
-    backgroundColor: colors.signWhite,
+    backgroundColor: colors.card,
     padding: 4,
     gap: 4,
   },
   toggleItem: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 7 },
-  toggleItemActive: { backgroundColor: colors.signGreen },
-  toggleLabel: { fontFamily: fonts.bold, fontSize: 18, color: colors.road },
-  toggleLabelActive: { color: colors.signWhite },
+  toggleItemActive: { backgroundColor: colors.brand },
+  toggleLabel: { fontFamily: fonts.bold, fontSize: 18, color: colors.textMuted },
+  toggleLabelActive: { color: colors.onBrand },
   field: { gap: space.s },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     minHeight: 64,
     borderWidth: 2,
-    borderColor: colors.shoulder,
+    borderColor: colors.border,
     borderRadius: 10,
-    backgroundColor: colors.signWhite,
+    backgroundColor: colors.card,
     paddingHorizontal: space.m,
     gap: space.s,
   },
-  inputRowError: { borderColor: colors.stopRed },
-  prefix: { fontFamily: fonts.bold, fontSize: 24, color: colors.road },
-  input: { flex: 1, fontFamily: fonts.bold, fontSize: 24, color: colors.asphalt, paddingVertical: space.s },
+  inputRowError: { borderColor: colors.error },
+  prefix: { fontFamily: fonts.bold, fontSize: 24, color: colors.textMuted },
+  input: { flex: 1, fontFamily: fonts.bold, fontSize: 24, color: colors.text, paddingVertical: space.s },
   emailInput: { fontSize: 20 },
 });

@@ -20,12 +20,14 @@ export default function RootLayout() {
 
   return (
     <>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.concrete } }}>
+      <StatusBar style="light" />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
         <Stack.Protected guard={signedIn}>
           <Stack.Screen name="index" />
           <Stack.Screen name="add-contact" />
           <Stack.Screen name="confirm-contact" />
+          <Stack.Screen name="mechanic-signup" />
+          <Stack.Screen name="account" />
         </Stack.Protected>
         <Stack.Protected guard={!signedIn}>
           <Stack.Screen name="sign-in" />
