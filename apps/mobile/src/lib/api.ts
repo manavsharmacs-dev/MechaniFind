@@ -11,6 +11,12 @@ function resolveApiUrl(): string {
   if (fromEnv) return fromEnv.replace(/\/$/, '');
   const devHost = Constants.expoConfig?.hostUri?.split(':')[0];
   if (__DEV__ && devHost) return `http://${devHost}:3000`;
+  if (__DEV__) {
+    throw new Error(
+      "Can't find the API. MechaniFind runs in the Expo Go app on your phone, not in a web browser. " +
+        'Open Expo Go → "Enter URL manually" → exp://<your laptop IP>:8081',
+    );
+  }
   throw new Error('EXPO_PUBLIC_API_URL is not set');
 }
 

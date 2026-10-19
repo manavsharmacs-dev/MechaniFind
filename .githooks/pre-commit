@@ -1,0 +1,29 @@
+#!/bin/sh
+# Refuses any commit that would put a secret on GitHub.
+# Enabled once per clone with:  git config core.hooksPath .githooks
+
+fail=0
+
+# 1. No .env files (except the empty template).
+for f in $(git diff --cached --name-only --diff-filter=ACMR); do
+  case "$f" in
+    *.env.example) ;;
+    *.env|*.env.*|.env*|*/.env*) echo "BLOCKED: $f is an environment file (secrets live there)."; fail=1 ;;
+    *.pem|*.p8|*.p12|*.key|*cookies.txt) echo "BLOCKED: $f looks like a key or session file."; fail=1 ;;
+  esac
+done
+
+# 2. No secret-looking values in any added line.
+patterns='npg_[A-Za-z0-9]{8,}|postgres(ql)?://[^:/ "]+:[^@ "]{6,}@|(BETTER_AUTH_SECRET|TURNSTILE_SECRET_KEY|TWILIO_AUTH_TOKEN|ANTHROPIC_API_KEY|GEMINI_API_KEY)=[^ "]{8,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{32,}|AIza[0-9A-Za-z_-]{30,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+hits=$(git diff --cached -U0 --no-color | grep -E '^\+' | grep -v '^+++' | grep -nE "$patterns")
+if [ -n "$hits" ]; then
+  echo "BLOCKED: these added lines look like secrets:"
+  echo "$hits" | sed -E 's/(.{0,60}).*/\1…/'
+  fail=1
+fi
+
+if [ $fail -ne 0 ]; then
+  echo ""
+  echo "Commit stopped. Move secrets into .env (which git ignores) and try again."
+  exit 1
+fi
