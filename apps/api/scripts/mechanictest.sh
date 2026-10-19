@@ -5,7 +5,7 @@ npx tsx scripts/authtest-cleanup.mts >/dev/null
 LOG=$(mktemp); JAR=$(mktemp); JAR2=$(mktemp)
 PORT=3999 LOCATION_PING_SECONDS=1 TRUST_PROXY_HEADER=x-forwarded-for npx tsx src/index.ts > "$LOG" 2>&1 &
 SERVER=$!
-trap 'kill $SERVER 2>/dev/null; rm -f "$LOG" "$JAR" "$JAR2"; npx tsx scripts/authtest-cleanup.mts >/dev/null' EXIT
+trap 'kill $SERVER 2>/dev/null; rm -f "$LOG" "$JAR" "$JAR2"; npx tsx scripts/seed-dashboard.mts --clean >/dev/null; npx tsx scripts/authtest-cleanup.mts >/dev/null' EXIT
 for i in {1..40}; do curl -s localhost:3999/ >/dev/null && break; sleep 0.25; done
 
 U=http://localhost:3999; B=$U/api/auth
@@ -92,3 +92,26 @@ pass "location outside the US refused"           "$(curl -s -o /dev/null -w '%{h
 npm run -s mechanic:approve -- $P --revoke >/dev/null
 pass "revoking approval forces them offline"     "$(curl -s -b "$JAR" $U/mechanic/profile | grep -o '"isAvailable":false')" '"isAvailable":false'
 pass "...and they can't go back online"          "$(avail "{\"available\":true,$LOC}")" 403
+
+echo "--- Dashboard"
+npm run -s mechanic:approve -- $P >/dev/null
+curl -s -o /dev/null "${H[@]}" -b "$JAR" -X PATCH $U/mechanic/profile -d '{"calloutFeeCents":25000}'
+npx tsx scripts/seed-dashboard.mts $P >/dev/null
+D=$(curl -s -b "$JAR" "$U/mechanic/dashboard?tz=America/Chicago")
+j() { echo "$D" | python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
+pass "signed out: refused"                        "$(st $U/mechanic/dashboard)" 401
+pass "account with no mechanic profile: 404"      "$(st -b "$JAR2" $U/mechanic/dashboard)" 404
+pass "shows exactly my 1 waiting offer"           "$(j "len(d['offers'])")" 1
+pass "never shows another mechanic's offer"       "$(echo "$D" | grep -c 'PRIVATE')" 0
+pass "offer shows approximate distance only"      "$(j "d['offers'][0]['approxMiles']")" 12.5
+pass "offer hides driver's exact location"        "$(j "'location' in d['offers'][0] or 'lat' in d['offers'][0]")" False
+pass "active job shown, with status"              "$(j "d['activeJob']['status']")" en_route
+pass "active job has the exact location"          "$(j "d['activeJob']['location']['lat']")" 42.067
+pass "today: 1 job completed"                     "$(j "d['stats']['today']['jobsCompleted']")" 1
+pass "today: fees earned = fee at time of accept" "$(j "d['stats']['today']['calloutFeesCents']")" 25000
+pass "today: 3 offers received, 2 accepted"       "$(j "(d['stats']['today']['offersReceived'], d['stats']['today']['offersAccepted'])")" "(3, 2)"
+pass "acceptance rate 67%"                        "$(j "d['stats']['today']['acceptanceRate']")" 0.67
+pass "history lists the completed job"            "$(j "[h['status'] for h in d['history']]")" "['completed']"
+curl -s -o /dev/null "${H[@]}" -b "$JAR" -X PATCH $U/mechanic/profile -d '{"calloutFeeCents":40000}'
+pass "raising my price doesn't rewrite past earnings" "$(curl -s -b "$JAR" $U/mechanic/dashboard | python3 -c "import json,sys; print(json.load(sys.stdin)['stats']['today']['calloutFeesCents'])")" 25000
+pass "bogus time zone falls back safely"          "$(curl -s -b "$JAR" "$U/mechanic/dashboard?tz=';drop%20table%20jobs;--" | python3 -c "import json,sys; print(json.load(sys.stdin)['stats']['timeZone'])")" America/Chicago

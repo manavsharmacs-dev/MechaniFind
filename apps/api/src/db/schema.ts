@@ -195,6 +195,8 @@ export const jobs = pgTable('jobs', {
   requestId: uuid('request_id').notNull().references(() => serviceRequests.id, { onDelete: 'restrict' }),
   mechanicId: text('mechanic_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
   status: jobStatus('status').notNull().default('accepted'),
+  // The mechanic's fee at the moment they accepted — later price changes don't rewrite history.
+  calloutFeeCents: integer('callout_fee_cents'),
   acceptedAt: timestamp('accepted_at', { withTimezone: true }).notNull().defaultNow(),
   enRouteAt: timestamp('en_route_at', { withTimezone: true }),
   arrivedAt: timestamp('arrived_at', { withTimezone: true }),

@@ -8,6 +8,7 @@ import { cleanText, jsonBody, usLocation } from '../lib/validate.js';
 import { useQuota } from '../protect/quota.js';
 import { AVAILABILITY, QUOTA } from '../protect/limits.js';
 import { MemoryLimiter } from '../protect/memory-limiter.js';
+import { buildDashboard, safeTimeZone } from '../dispatch/dashboard.js';
 
 // ---------- What a mechanic is allowed to send ----------
 // .strict() = any extra field (isApproved, role, userId, ...) gets the request rejected.
@@ -211,4 +212,23 @@ mechanicRoutes.post('/location', jsonBody(z.object({ location: usLocation }).str
   // Offline mechanics' locations are not tracked.
   if (!updated) return c.json({ error: 'offline', message: 'Go online to share your location.' }, 409);
   return c.json({ ok: true });
+});
+
+// ---------- Dashboard ----------
+
+/**
+ * The mechanic's home screen in one request: profile & online status, offers waiting,
+ * the active job, today's / this week's stats, and recent jobs.
+ * ?tz=America/Chicago sets what "today" means (defaults to Central time).
+ */
+mechanicRoutes.get('/dashboard', async (c) => {
+  const userId = c.get('user').id;
+  const [p] = await db.select().from(mechanicProfiles).where(eq(mechanicProfiles.userId, userId));
+  if (!p) return c.json({ error: 'not_found' }, 404);
+  const tz = safeTimeZone(c.req.query('tz'));
+  return c.json({
+    profile: present(p),
+    canGoOnline: p.isApproved,
+    ...(await buildDashboard(userId, tz)),
+  });
 });

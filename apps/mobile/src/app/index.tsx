@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { ErrorMessage, PrimaryButton, Screen, TextButton } from '@/components/ui';
-import { MechanicCard } from '@/components/mechanic-card';
+import { MechanicDashboard } from '@/components/mechanic-dashboard';
 import { apiFetch, authClient } from '@/lib/auth-client';
 import { CANT_CONNECT } from '@/lib/auth-errors';
 import { getMyMechanicProfile, type MechanicProfile } from '@/lib/mechanic';
@@ -38,10 +38,10 @@ export default function Home() {
 
   return (
     <Screen>
-      <View style={styles.center}>
+      <View style={me && mechanic ? styles.top : styles.center}>
         {error ? <ErrorMessage message={error} /> : null}
         {!me && !error ? <ActivityIndicator color={colors.brand} size="large" /> : null}
-        {me && mechanic ? <MechanicCard profile={mechanic} hasPhone={!!me.phoneNumber} role={me.role} /> : null}
+        {me && mechanic ? <MechanicDashboard /> : null}
         {me && !mechanic ? <PrimaryButton label="Become a mechanic" onPress={becomeMechanic} /> : null}
       </View>
       <View style={styles.footer}>
@@ -53,5 +53,6 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', gap: space.m },
+  top: { flex: 1, gap: space.m },
   footer: { paddingBottom: space.s },
 });

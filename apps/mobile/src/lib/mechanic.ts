@@ -94,3 +94,80 @@ export function mechanicErrorMessage(r: { status: number; error: string; message
 
 export const formatFee = (cents: number) =>
   `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
+
+// ---------- Dashboard ----------
+
+export type Stats = {
+  jobsCompleted: number;
+  calloutFeesCents: number;
+  offersReceived: number;
+  offersAccepted: number;
+  acceptanceRate: number | null;
+  avgSecondsToAccept: number | null;
+};
+
+export type Offer = {
+  offerId: string;
+  requestId: string;
+  category: string | null;
+  requiredSpecialty: string | null;
+  faultCode: string | null;
+  driverSaysDrivable: boolean | null;
+  description: string;
+  approxMiles: number | null;
+  sentAt: string;
+  expiresAt: string;
+};
+
+export type ActiveJob = {
+  jobId: string;
+  status: 'accepted' | 'en_route' | 'arrived';
+  calloutFeeCents: number | null;
+  category: string | null;
+  faultCode: string | null;
+  driverSaysDrivable: boolean | null;
+  description: string;
+  location: { lat: number; lng: number };
+};
+
+export type Dashboard = {
+  profile: MechanicProfile;
+  canGoOnline: boolean;
+  offers: Offer[];
+  activeJob: ActiveJob | null;
+  stats: { timeZone: string; today: Stats; thisWeek: Stats };
+  history: { jobId: string; status: string; finishedAt: string | null; calloutFeeCents: number | null; category: string | null }[];
+};
+
+const deviceTimeZone = () => {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'America/Chicago'; }
+};
+
+/** null = no mechanic profile. */
+export async function getDashboard(): Promise<Dashboard | null> {
+  const r = await call<Dashboard>(`/mechanic/dashboard?tz=${encodeURIComponent(deviceTimeZone())}`);
+  if (r.ok) return r.data;
+  if (r.status === 404) return null;
+  throw new Error(r.error);
+}
+
+export function setAvailability(available: boolean, location?: { lat: number; lng: number }) {
+  return call<MechanicProfile>('/mechanic/availability', {
+    method: 'POST',
+    body: JSON.stringify(available ? { available, location } : { available }),
+  });
+}
+
+export function sendLocation(location: { lat: number; lng: number }) {
+  return call<{ ok: true }>('/mechanic/location', { method: 'POST', body: JSON.stringify({ location }) });
+}
+
+export function updateProfile(changes: Partial<NewMechanicProfile>) {
+  return call<MechanicProfile>('/mechanic/profile', { method: 'PATCH', body: JSON.stringify(changes) });
+}
+
+export const ISSUE_LABELS: Record<string, string> = {
+  engine: 'Engine', transmission: 'Transmission', electrical: 'Electrical', brakes: 'Brakes & air',
+  tires: 'Tires', suspension: 'Suspension', aftertreatment: 'DEF / DPF', hvac: 'A/C & heat',
+  reefer: 'Reefer unit', hydraulics: 'Hydraulics', trailer: 'Trailer', fuel: 'Fuel', other: 'Other',
+};

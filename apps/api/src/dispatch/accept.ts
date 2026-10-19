@@ -52,8 +52,12 @@ export async function acceptOffer(requestId: string, mechanicId: string): Promis
         .returning({ id: serviceRequests.id });
       if (claimed.length === 0) throw new Unavailable(); // undoes step 1
 
-      // 3. Create the job.
-      const [job] = await tx.insert(jobs).values({ requestId, mechanicId }).returning({ id: jobs.id });
+      // 3. Create the job, locking in the mechanic's current call-out fee.
+      const [fee] = await tx.select({ cents: mechanicProfiles.calloutFeeCents })
+        .from(mechanicProfiles).where(eq(mechanicProfiles.userId, mechanicId));
+      const [job] = await tx.insert(jobs)
+        .values({ requestId, mechanicId, calloutFeeCents: fee?.cents ?? null })
+        .returning({ id: jobs.id });
 
       // 4. Everyone else's offer for this request is now expired.
       await tx
