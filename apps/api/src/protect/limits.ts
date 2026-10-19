@@ -47,6 +47,7 @@ export const QUOTA = {
   verifyAttemptsPerPhonePerHour: 10, // with 6-digit codes: ~1 in 100,000 odds per hour per phone
   llmMessagesPerUserPerDay: 40,     // ready for the AI assistant
   breakdownRequestsPerUserPerDay: 5,// ready for breakdown requests
+  profileEditIntervalDays: 7, // mechanics can change their profile once a week
 };
 
 // ---------- Cost caps (whole app, per day). When hit, that feature pauses. ----------

@@ -3,9 +3,9 @@
 # small limits, then cleans up. Usage: npm run test:protect
 cd "$(dirname "$0")/.."
 LOG=$(mktemp); JAR=$(mktemp); SERVER=
-U=http://localhost:3000
+U=http://localhost:3999
 J=(-H 'content-type: application/json')
-start() { env "$@" npx tsx src/index.ts > "$LOG" 2>&1 & SERVER=$!; for i in {1..40}; do curl -s $U/ >/dev/null && return; sleep 0.25; done; }
+start() { env PORT=3999 "$@" npx tsx src/index.ts > "$LOG" 2>&1 & SERVER=$!; for i in {1..40}; do curl -s $U/ >/dev/null && return; sleep 0.25; done; }
 stop() { [[ -n $SERVER ]] && kill $SERVER 2>/dev/null; wait $SERVER 2>/dev/null; SERVER=; }
 trap 'stop; rm -f "$LOG" "$JAR"' EXIT
 pass() { [[ "$2" == "$3" ]] && echo "PASS  $1" || echo "FAIL  $1  (expected $3, got $2)"; }

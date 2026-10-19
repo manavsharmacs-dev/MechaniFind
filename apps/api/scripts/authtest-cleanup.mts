@@ -7,6 +7,8 @@ const roles = await db.select({ phone: users.phoneNumber, role: users.role, emai
   .from(users).where(or(like(users.phoneNumber, '+1815555%'), like(users.email, '%@example.com')));
 console.log('test users before cleanup:', JSON.stringify(roles));
 
+// Mechanic profiles first (they block deleting the user, on purpose).
+await db.execute(sql`delete from mechanic_profiles where user_id in (select id from users where phone_number like '+1815555%' or email like '%@example.com')`);
 await db.delete(users).where(or(like(users.phoneNumber, '+1815555%'), like(users.email, '%@example.com'))); // sessions/accounts cascade
 await db.delete(verifications).where(or(like(verifications.identifier, '%+1815555%'), like(verifications.identifier, '%@example.com%')));
 await db.delete(rateLimits);
