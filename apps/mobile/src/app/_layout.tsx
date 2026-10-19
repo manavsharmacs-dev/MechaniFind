@@ -24,6 +24,8 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.concrete } }}>
         <Stack.Protected guard={signedIn}>
           <Stack.Screen name="index" />
+          <Stack.Screen name="add-contact" />
+          <Stack.Screen name="confirm-contact" />
         </Stack.Protected>
         <Stack.Protected guard={!signedIn}>
           <Stack.Screen name="sign-in" />

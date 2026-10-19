@@ -40,7 +40,10 @@ export const REQUEST = {
 export const QUOTA = {
   smsPerPhonePerHour: 5,
   smsPerPhonePerDay: 10,
-  smsPerIpPerHour: 10,
+  emailPerAddressPerHour: 5,
+  emailPerAddressPerDay: 10,
+  codesPerIpPerHour: 10,             // phone + email codes combined, per IP
+  verifyAttemptsPerEmailPerHour: 10,
   verifyAttemptsPerPhonePerHour: 10, // with 6-digit codes: ~1 in 100,000 odds per hour per phone
   llmMessagesPerUserPerDay: 40,     // ready for the AI assistant
   breakdownRequestsPerUserPerDay: 5,// ready for breakdown requests
@@ -49,6 +52,7 @@ export const QUOTA = {
 // ---------- Cost caps (whole app, per day). When hit, that feature pauses. ----------
 export const COST_CAP = {
   smsPerDay: env.SMS_DAILY_CAP ?? 200,   // ~$1.60/day at ~$0.008/text
+  emailPerDay: env.EMAIL_DAILY_CAP ?? 300, // stays inside a free email tier
   llmCallsPerDay: env.LLM_DAILY_CAP ?? 3000, // ~$6/day at ~$0.002/call
 };
 

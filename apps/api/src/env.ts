@@ -21,6 +21,7 @@ const schema = z.object({
   // Cloudflare Turnstile CAPTCHA secret. Required in production.
   TURNSTILE_SECRET_KEY: z.string().optional(),
   SMS_DAILY_CAP: z.coerce.number().int().min(0).optional(),
+  EMAIL_DAILY_CAP: z.coerce.number().int().min(0).optional(),
   LLM_DAILY_CAP: z.coerce.number().int().min(0).optional(),
   RATE_IP_PER_MIN: z.coerce.number().int().min(1).optional(),
   RATE_USER_PER_MIN: z.coerce.number().int().min(1).optional(),

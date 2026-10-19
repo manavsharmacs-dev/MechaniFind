@@ -10,6 +10,7 @@ import { env } from './env.js';
 import { db } from './db/index.js';
 import { auth, ALLOWED_AUTH_ROUTES, CLIENT_IP_HEADER } from './auth/auth.js';
 import { requireAuth, type AuthVars } from './auth/middleware.js';
+import { isPlaceholderEmail } from './auth/email.js';
 import { protect, tooMany } from './protect/middleware.js';
 import { MemoryLimiter } from './protect/memory-limiter.js';
 import { clientIp } from './protect/client-ip.js';
@@ -51,8 +52,12 @@ app.get('/health/db', async (c) => {
 });
 
 // ---------- Sign-in (handled by Better Auth) ----------
-// POST /api/auth/phone-number/send-otp   { phoneNumber }   (+ CAPTCHA token in production)
-// POST /api/auth/phone-number/verify     { phoneNumber, code }
+// POST /api/auth/phone-number/send-otp          { phoneNumber }        (+ CAPTCHA token in production)
+// POST /api/auth/phone-number/verify            { phoneNumber, code [, updatePhoneNumber] }
+// POST /api/auth/email-otp/send-verification-otp { email, type: "sign-in" } (+ CAPTCHA)
+// POST /api/auth/sign-in/email-otp              { email, otp }
+// POST /api/auth/email-otp/request-email-change { newEmail }   (signed in)
+// POST /api/auth/email-otp/change-email         { newEmail, otp } (signed in)
 // GET  /api/auth/get-session
 // POST /api/auth/sign-out
 app.on(['GET', 'POST'], '/api/auth/*', (c) => {
@@ -71,7 +76,11 @@ app.get('/me', requireAuth, (c) => {
   return c.json({
     id: u.id,
     name: u.name,
-    phoneNumber: u.phoneNumber,
+    phoneNumber: u.phoneNumber ?? null,
+    phoneVerified: !!u.phoneNumberVerified,
+    // Phone-only accounts have an internal placeholder email — never show it.
+    email: isPlaceholderEmail(u.email) ? null : u.email,
+    emailVerified: !isPlaceholderEmail(u.email) && !!u.emailVerified,
     role: u.role,
     companyId: u.companyId ?? null,
   });

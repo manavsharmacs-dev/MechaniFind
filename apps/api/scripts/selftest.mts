@@ -8,6 +8,14 @@ const pass = (name: string, ok: boolean, extra = '') => console.log(`${ok ? 'PAS
 const fails = async (fn: () => Promise<unknown>) => { try { await fn(); return false; } catch { return true; } };
 let reqId: string | undefined;
 
+// Clear leftovers from any earlier run that crashed mid-way.
+const leftover = sql`('t_driver','t_mechA','t_mechB','t_mechC')`;
+await db.execute(sql`delete from jobs where mechanic_id in ${leftover}`);
+await db.execute(sql`delete from dispatch_offers where mechanic_id in ${leftover}`);
+await db.execute(sql`delete from service_requests where driver_id in ${leftover}`);
+await db.execute(sql`delete from mechanic_profiles where user_id in ${leftover}`);
+await db.execute(sql`delete from users where id in ${leftover}`);
+
 try {
   await db.insert(users).values([
     { id: 't_driver', name: 'Test Driver', email: 't_driver@test.local', phoneNumber: '+18475550100' },

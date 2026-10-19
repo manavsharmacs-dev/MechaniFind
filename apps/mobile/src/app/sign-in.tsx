@@ -1,30 +1,34 @@
 import { useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { Body, ErrorMessage, Label, PrimaryButton, Screen, SignPanel } from '@/components/ui';
-import { authClient } from '@/lib/auth-client';
+import { Body, ErrorMessage, PrimaryButton, Screen, SignPanel } from '@/components/ui';
+import { ContactInput, MethodToggle, type Method } from '@/components/contact-input';
 import { authErrorMessage, CANT_CONNECT } from '@/lib/auth-errors';
-import { formatUSPhone, toE164 } from '@/lib/phone';
-import { colors, fonts, space } from '@/theme';
+import { sendCode } from '@/lib/contact-auth';
+import { isEmail, normalizeEmail } from '@/lib/email';
+import { toE164 } from '@/lib/phone';
+import { space } from '@/theme';
 
 export default function SignIn() {
+  const [method, setMethod] = useState<Method>('phone');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
-  const e164 = toE164(phone);
+  const value = method === 'phone' ? toE164(phone) : isEmail(normalizeEmail(email)) ? normalizeEmail(email) : null;
 
-  async function sendCode() {
-    if (!e164) {
-      setError('Enter a 10-digit US phone number.');
+  async function send() {
+    if (!value) {
+      setError(method === 'phone' ? 'Enter a 10-digit US phone number.' : 'Enter a valid email address.');
       return;
     }
     setError(null);
     setSending(true);
     try {
-      const { error: apiError } = await authClient.phoneNumber.sendOtp({ phoneNumber: e164 });
+      const { error: apiError } = await sendCode(method, value, 'sign-in');
       if (apiError) return setError(authErrorMessage(apiError));
-      router.push({ pathname: '/verify', params: { phone: e164 } });
+      router.push({ pathname: '/verify', params: { method, value } });
     } catch {
       setError(CANT_CONNECT);
     } finally {
@@ -36,48 +40,29 @@ export default function SignIn() {
     <Screen>
       <SignPanel title="MechaniFind" subtitle="Get a mechanic to your truck." />
 
+      <MethodToggle value={method} onChange={(m) => { setMethod(m); setError(null); }} />
+
       <View style={styles.field}>
-        <Label>Your phone number</Label>
-        <View style={[styles.inputRow, error ? styles.inputRowError : null]}>
-          <Text style={styles.prefix}>+1</Text>
-          <TextInput
-            style={styles.input}
-            value={phone}
-            onChangeText={(t) => { setPhone(formatUSPhone(t)); setError(null); }}
-            onSubmitEditing={sendCode}
-            placeholder="(815) 555-0123"
-            placeholderTextColor={colors.road}
-            keyboardType="phone-pad"
-            textContentType="telephoneNumber"
-            autoComplete="tel"
-            returnKeyType="send"
-            accessibilityLabel="Your phone number"
-            autoFocus
-          />
-        </View>
+        <ContactInput
+          method={method}
+          value={method === 'phone' ? phone : email}
+          onChange={(v) => { (method === 'phone' ? setPhone : setEmail)(v); setError(null); }}
+          onSubmit={send}
+          hasError={!!error}
+        />
         <ErrorMessage message={error} />
-        <Body muted>We'll text you a 6-digit code to sign in. No password needed.</Body>
+        <Body muted>
+          {method === 'phone'
+            ? "We'll text you a 6-digit code to sign in. No password needed."
+            : "We'll email you a 6-digit code to sign in. No password needed."}
+        </Body>
       </View>
 
-      <PrimaryButton label="Send code" onPress={sendCode} loading={sending} disabled={!e164} />
+      <PrimaryButton label="Send code" onPress={send} loading={sending} disabled={!value} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   field: { gap: space.s },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 64,
-    borderWidth: 2,
-    borderColor: colors.shoulder,
-    borderRadius: 10,
-    backgroundColor: colors.signWhite,
-    paddingHorizontal: space.m,
-    gap: space.s,
-  },
-  inputRowError: { borderColor: colors.stopRed },
-  prefix: { fontFamily: fonts.bold, fontSize: 24, color: colors.road },
-  input: { flex: 1, fontFamily: fonts.bold, fontSize: 24, color: colors.asphalt, paddingVertical: space.s },
 });

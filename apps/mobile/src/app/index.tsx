@@ -1,12 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Body, ErrorMessage, Label, PrimaryButton, Screen, SignPanel } from '@/components/ui';
+import { router, useFocusEffect } from 'expo-router';
+import { Body, ErrorMessage, Label, PrimaryButton, Screen, SignPanel, TextButton } from '@/components/ui';
 import { apiFetch, authClient } from '@/lib/auth-client';
 import { CANT_CONNECT } from '@/lib/auth-errors';
 import { displayE164 } from '@/lib/phone';
 import { space } from '@/theme';
 
-type Me = { id: string; name: string; phoneNumber: string | null; role: string; companyId: string | null };
+type Me = {
+  id: string;
+  name: string;
+  phoneNumber: string | null;
+  email: string | null;
+  role: string;
+  companyId: string | null;
+};
 
 const ROLE_NAMES: Record<string, string> = {
   driver: 'Driver',
@@ -20,36 +28,58 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
 
-  // Loads the account from our own API — proves the app's session works on protected routes.
-  useEffect(() => {
-    apiFetch('/me')
-      .then(async (res) => {
-        if (res.status === 401) return authClient.signOut(); // session expired on the server
-        if (!res.ok) throw new Error();
-        setMe(await res.json());
-      })
-      .catch(() => setError(CANT_CONNECT));
-  }, []);
+  // Reload the account every time this screen is shown (e.g. after adding an email).
+  useFocusEffect(
+    useCallback(() => {
+      apiFetch('/me')
+        .then(async (res) => {
+          if (res.status === 401) return authClient.signOut(); // session expired on the server
+          if (!res.ok) throw new Error();
+          setMe(await res.json());
+          setError(null);
+        })
+        .catch(() => setError(CANT_CONNECT));
+    }, []),
+  );
 
   async function signOut() {
     setSigningOut(true);
     await authClient.signOut().finally(() => setSigningOut(false));
   }
 
+  const title = me?.phoneNumber ? displayE164(me.phoneNumber) : me?.email ?? undefined;
+
   return (
     <Screen>
-      <SignPanel
-        title="You're signed in"
-        subtitle={me?.phoneNumber ? displayE164(me.phoneNumber) : undefined}
-      />
+      <SignPanel title="You're signed in" subtitle={title} />
 
       <ErrorMessage message={error} />
 
       {me ? (
-        <View style={styles.row}>
-          <Label>Account type</Label>
-          <Body>{ROLE_NAMES[me.role] ?? me.role}</Body>
-        </View>
+        <>
+          <View style={styles.row}>
+            <Label>Account type</Label>
+            <Body>{ROLE_NAMES[me.role] ?? me.role}</Body>
+          </View>
+
+          <View style={styles.row}>
+            <Label>Phone</Label>
+            {me.phoneNumber ? (
+              <Body>{displayE164(me.phoneNumber)}</Body>
+            ) : (
+              <TextButton label="Add your phone number" onPress={() => router.push({ pathname: '/add-contact', params: { method: 'phone' } })} />
+            )}
+          </View>
+
+          <View style={styles.row}>
+            <Label>Email</Label>
+            {me.email ? (
+              <Body>{me.email}</Body>
+            ) : (
+              <TextButton label="Add your email" onPress={() => router.push({ pathname: '/add-contact', params: { method: 'email' } })} />
+            )}
+          </View>
+        </>
       ) : null}
 
       <Body muted>Breakdown requests will show up here.</Body>

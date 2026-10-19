@@ -1,6 +1,6 @@
 import { createAuthClient } from 'better-auth/react';
 import { expoClient } from '@better-auth/expo/client';
-import { phoneNumberClient, inferAdditionalFields } from 'better-auth/client/plugins';
+import { phoneNumberClient, emailOTPClient, inferAdditionalFields } from 'better-auth/client/plugins';
 import * as SecureStore from 'expo-secure-store';
 import { API_URL } from './api';
 
@@ -11,6 +11,7 @@ export const authClient = createAuthClient({
   plugins: [
     expoClient({ scheme: 'mechanifind', storagePrefix: 'mechanifind', storage: SecureStore }),
     phoneNumberClient(),
+    emailOTPClient(),
     inferAdditionalFields({
       user: {
         role: { type: 'string', required: false },

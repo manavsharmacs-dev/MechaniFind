@@ -24,6 +24,10 @@ export async function acceptOffer(requestId: string, mechanicId: string): Promis
   if (!UUID.test(requestId)) return { ok: false, reason: 'unavailable' };
   try {
     return await db.transaction(async (tx) => {
+      // 0. Lock the request row FIRST. Every accept for the same request now waits its
+      //    turn here, which prevents deadlocks between simultaneous accepts.
+      await tx.execute(sql`select 1 from ${serviceRequests} where ${serviceRequests.id} = ${requestId} for update`);
+
       // 1. This mechanic must hold a fresh pending offer, and still be approved and active.
       const offer = await tx
         .update(dispatchOffers)
@@ -39,8 +43,8 @@ export async function acceptOffer(requestId: string, mechanicId: string): Promis
         .returning({ id: dispatchOffers.id });
       if (offer.length === 0) throw new Unavailable();
 
-      // 2. Claim the request only if it's still open. Postgres locks the row, so a
-      //    second mechanic waits here, then finds status != 'dispatching' and gets 0 rows.
+      // 2. Claim the request only if it's still open. A mechanic who waited at step 0
+      //    finds status != 'dispatching' here and gets 0 rows.
       const claimed = await tx
         .update(serviceRequests)
         .set({ status: 'assigned' })
