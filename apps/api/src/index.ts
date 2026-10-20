@@ -12,6 +12,7 @@ import { auth, ALLOWED_AUTH_ROUTES, CLIENT_IP_HEADER } from './auth/auth.js';
 import { requireAuth, type AuthVars } from './auth/middleware.js';
 import { isPlaceholderEmail } from './auth/email.js';
 import { mechanicRoutes } from './routes/mechanic.js';
+import { requestRoutes } from './routes/requests.js';
 import { protect, tooMany } from './protect/middleware.js';
 import { MemoryLimiter } from './protect/memory-limiter.js';
 import { clientIp } from './protect/client-ip.js';
@@ -92,6 +93,12 @@ app.get('/me', requireAuth, (c) => {
 // GET   /mechanic/profile   your profile
 // PATCH /mechanic/profile   edit it
 app.route('/mechanic', mechanicRoutes);
+
+// ---------- Breakdown requests (drivers) ----------
+// POST /requests              report a breakdown
+// GET  /requests/current      your open breakdown
+// POST /requests/:id/cancel   cancel it
+app.route('/requests', requestRoutes);
 
 const server = serve({ fetch: app.fetch, hostname: env.HOST, port: env.PORT }, (info) => {
   console.log(`API running on http://${info.address}:${info.port}`);

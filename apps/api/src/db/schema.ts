@@ -161,10 +161,16 @@ export const serviceRequests = pgTable('service_requests', {
   location: geographyPoint('location').notNull(),
   status: requestStatus('status').notNull().default('dispatching'),
   currentWave: integer('current_wave').notNull().default(0),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  cancelReason: varchar('cancel_reason', { length: 200 }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [
   check('request_wave_nonnegative', sql`${t.currentWave} >= 0`),
+  // A driver can have only ONE open breakdown. Enforced by the database itself,
+  // so two taps at the same instant can't create two.
+  uniqueIndex('one_open_request_per_driver').on(t.driverId)
+    .where(sql`${t.status} in ('dispatching', 'assigned')`),
   check('request_location_is_point', sql`ST_GeometryType(${t.location}::geometry) = 'ST_Point'`),
   index('request_location_idx').using('gist', t.location),
   index('request_status_idx').on(t.status),

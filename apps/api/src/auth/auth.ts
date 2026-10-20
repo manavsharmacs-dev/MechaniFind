@@ -95,6 +95,8 @@ export const auth = betterAuth({
       // input: false = the app can NEVER set these. Only server code can.
       role: { type: 'string', required: false, defaultValue: 'driver', input: false },
       companyId: { type: 'string', required: false, input: false },
+      // Set when an account is deleted or banned. Checked on every signed-in request.
+      deletedAt: { type: 'date', required: false, input: false },
     },
   },
 

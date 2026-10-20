@@ -15,6 +15,8 @@ export type AuthVars = {
 export const requireAuth = createMiddleware<AuthVars>(async (c, next) => {
   const result = await auth.api.getSession({ headers: c.req.raw.headers });
   if (!result) return c.json({ error: 'unauthorized' }, 401);
+  // Deleted or banned accounts are refused immediately, even with a still-valid session.
+  if (result.user.deletedAt) return c.json({ error: 'account_disabled' }, 403);
   // Per-account limit: one account can't flood us by spreading across devices/IPs.
   const rate = checkUserRate(result.user.id);
   if (!rate.ok) return tooMany(c, rate.retryAfterSec);
