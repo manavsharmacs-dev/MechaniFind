@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { createAuthMiddleware, APIError } from 'better-auth/api';
+import { createAuthMiddleware, APIError, getSessionFromCtx } from 'better-auth/api';
 import { phoneNumber, emailOTP, captcha } from 'better-auth/plugins';
 import { expo } from '@better-auth/expo';
 import { env } from '../env.js';
@@ -10,7 +10,7 @@ import { users, sessions, accounts, verifications, rateLimits } from '../db/sche
 import { sendEmailCode, sendSignInCode } from './send-code.js';
 import { emailProblem, normalizeEmail, PLACEHOLDER_EMAIL_DOMAIN } from './email.js';
 import { useBudget, useQuota } from '../protect/quota.js';
-import { QUOTA } from '../protect/limits.js';
+import { ACCOUNT, QUOTA } from '../protect/limits.js';
 
 // US numbers only (+1, valid area code and exchange). Blocks international
 // "SMS pumping" fraud, where bots trigger texts to expensive foreign numbers.
@@ -51,6 +51,24 @@ async function guardCodeSend(kind: 'sms' | 'email', address: string, ip: string)
   if (!perIp.ok) throw tooMany();
   const budget = await useBudget(kind === 'sms' ? 'smsPerDay' : 'emailPerDay');
   if (!budget.ok) throw paused();
+}
+
+/**
+ * Adding or changing an email/phone requires a RECENT sign-in (not just any valid session).
+ * Stops a stolen session token, or someone holding an old logged-in phone, from attaching
+ * their own email/phone and locking the owner out. Session refreshes never change createdAt,
+ * so an old session can't become "recent" by being used.
+ */
+async function requireRecentSignIn(ctx: Parameters<typeof getSessionFromCtx>[0]) {
+  const s = await getSessionFromCtx(ctx);
+  if (!s?.session) return; // not signed in: the route itself refuses
+  const ageMs = Date.now() - new Date(s.session.createdAt).getTime();
+  if (ageMs >= ACCOUNT.contactChangeFreshMinutes * 60_000) {
+    throw new APIError('FORBIDDEN', {
+      message: 'For your security, sign in again to add or change your email or phone number.',
+      code: 'REAUTH_REQUIRED',
+    });
+  }
 }
 
 function checkEmail(raw: unknown): string {
@@ -103,8 +121,8 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 30, // 30 days — drivers shouldn't have to sign in mid-breakdown
     updateAge: 60 * 60 * 24,      // refreshed once a day while in use
-    // Adding an email/phone already requires a code sent to it, so there's no
-    // need to force a fresh sign-in first.
+    // The library's own freshness check isn't used by any route we allow, so it stays off.
+    // Our own check (requireRecentSignIn) guards adding/changing an email or phone.
     freshAge: 0,
   },
 
@@ -143,12 +161,15 @@ export const auth = betterAuth({
       switch (ctx.path) {
         // ----- Code guessing: at most N attempts per phone/email per hour, across all codes and IPs -----
         case '/phone-number/verify': {
+          // Signed in and adding/replacing a phone (same truthiness test the library uses).
+          if (body.updatePhoneNumber) await requireRecentSignIn(ctx);
           const tries = await useQuota('verify', `phone:${String(body.phoneNumber ?? '')}`, QUOTA.verifyAttemptsPerPhonePerHour, 'hour');
           if (!tries.ok) throw tooManyTries();
           return;
         }
         case '/sign-in/email-otp':
         case '/email-otp/change-email': {
+          if (ctx.path === '/email-otp/change-email') await requireRecentSignIn(ctx);
           const email = normalizeEmail(ctx.path === '/sign-in/email-otp' ? body.email : body.newEmail);
           const tries = await useQuota('verify_email', `email:${email}`, QUOTA.verifyAttemptsPerEmailPerHour, 'hour');
           if (!tries.ok) throw tooManyTries();
@@ -168,6 +189,7 @@ export const auth = betterAuth({
           return guardCodeSend('email', checkEmail(body.email), ip);
         }
         case '/email-otp/request-email-change':
+          await requireRecentSignIn(ctx);
           return guardCodeSend('email', checkEmail(body.newEmail), ip);
       }
     }),

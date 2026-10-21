@@ -51,6 +51,13 @@ export const QUOTA = {
   profileEditsPerUserPerDay: 30,   // everything else (prices, radius...): generous abuse cap
 };
 
+// ---------- Account security ----------
+export const ACCOUNT = {
+  // Adding or changing an email/phone only works this soon after signing in, so a
+  // stolen session or an old login on a lost phone can't swap in the thief's contact.
+  contactChangeFreshMinutes: 10,
+};
+
 // ---------- Mechanic availability ----------
 export const AVAILABILITY = {
   locationPingSeconds: env.LOCATION_PING_SECONDS ?? 30, // a mechanic's phone may report location at most this often

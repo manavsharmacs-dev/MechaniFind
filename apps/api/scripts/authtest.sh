@@ -87,6 +87,30 @@ pass "steal: requesting another user's email looks normal" "$(curl -s -o /dev/nu
 grep -q "Email code for $E1" <(grep -c "" "$LOG" >/dev/null; awk -v e="$E1" 'index($0,"Email code for " e)' "$LOG" | tail -n +2) && echo "FAIL  steal: a code was sent to the owner's inbox" || echo "PASS  steal: no code is sent, so the email can't be claimed"
 pass "steal: guessing the change code fails" "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR3" -H 'origin: http://localhost:3000' -H 'x-forwarded-for: 10.9.0.4' -X POST $B/email-otp/change-email -d "{\"newEmail\":\"$E1\",\"otp\":\"123456\"}")" 400
 
+# 8b. Adding/changing a contact needs a RECENT sign-in (fix A)
+UID6=$(echo "$PHONE_ID" | sed -E 's/.*"id":"([^"]+)".*/\1/')   # bare id (myid returns "id":"...")
+[[ -n "$UID6" && "$UID6" != *'"'* ]] || echo "FAIL  fresh: couldn't read the test user's id"
+age() { npx tsx -e "import('./src/db/index.js').then(async ({db,pool})=>{const {sql}=await import('drizzle-orm');await db.execute(sql.raw(\"update sessions set created_at = now() - interval '$1 minutes' where user_id = '$UID6'\"));await pool.end();})"; }
+OH=(-H 'origin: http://localhost:3000')
+E3=link3@example.com; P7=+18155550107
+age 11
+R=$(curl -s -w ' %{http_code}' "${H[@]}" -b "$JAR3" "${OH[@]}" -H 'x-forwarded-for: 10.10.0.1' -X POST $B/email-otp/request-email-change -d "{\"newEmail\":\"$E3\"}")
+pass "fresh: 11-min-old session can't request an email change" "${R##* }" 403
+pass "...and says to sign in again"         "$(echo $R | grep -o 'REAUTH_REQUIRED')" REAUTH_REQUIRED
+grep -q "Email code for $E3" "$LOG" && echo "FAIL  ...but a code was sent anyway" || echo "PASS  ...and no code is sent"
+pass "fresh: 11-min-old session can't confirm an email change" "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR3" "${OH[@]}" -H 'x-forwarded-for: 10.10.0.1' -X POST $B/email-otp/change-email -d "{\"newEmail\":\"$E3\",\"otp\":\"123456\"}")" 403
+send $P7 10.10.0.2 >/dev/null
+pass "fresh: 11-min-old session can't add/replace a phone" "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR3" "${OH[@]}" -H 'x-forwarded-for: 10.10.0.2' -X POST $B/phone-number/verify -d "{\"phoneNumber\":\"$P7\",\"code\":\"$(code_for $P7)\",\"updatePhoneNumber\":true}")" 403
+pass "fresh: phone number unchanged"        "$(curl -s -b "$JAR3" localhost:3999/me | grep -o "\"phoneNumber\":\"$P6\"")" "\"phoneNumber\":\"$P6\""
+pass "fresh: the old session still works for everything else" "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR3" localhost:3999/me)" 200
+age 9
+pass "fresh: 9-min-old session can still change contacts" "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR3" "${OH[@]}" -H 'x-forwarded-for: 10.10.0.3' -X POST $B/email-otp/request-email-change -d "{\"newEmail\":\"$E3\"}")" 200
+age 60
+JAR4=$(mktemp); send $P6 10.10.0.4 >/dev/null
+curl -s -o /dev/null "${H[@]}" -c "$JAR4" -H 'x-forwarded-for: 10.10.0.4' -X POST $B/phone-number/verify -d "{\"phoneNumber\":\"$P6\",\"code\":\"$(code_for $P6)\"}"
+pass "fresh: signing in again unlocks contact changes" "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR4" "${OH[@]}" -H 'x-forwarded-for: 10.10.0.5' -X POST $B/email-otp/request-email-change -d "{\"newEmail\":\"$E3\"}")" 200
+rm -f "$JAR4"
+
 # 9. Sign out
 curl -s -o /dev/null "${H[@]}" -b "$JAR" -c "$JAR" -H 'origin: http://localhost:3000' -X POST $B/sign-out -d '{}'
 pass "signed out"                         "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" localhost:3999/me)" 401
