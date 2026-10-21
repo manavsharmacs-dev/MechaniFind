@@ -28,7 +28,7 @@ export async function acceptOffer(requestId: string, mechanicId: string): Promis
       //    turn here, which prevents deadlocks between simultaneous accepts.
       await tx.execute(sql`select 1 from ${serviceRequests} where ${serviceRequests.id} = ${requestId} for update`);
 
-      // 1. This mechanic must hold a fresh pending offer, and still be approved and active.
+      // 1. This mechanic must hold a fresh pending offer, and still be approved, insured and active.
       const offer = await tx
         .update(dispatchOffers)
         .set({ status: 'accepted', respondedAt: new Date() })
@@ -38,7 +38,8 @@ export async function acceptOffer(requestId: string, mechanicId: string): Promis
           eq(dispatchOffers.status, 'pending'),
           sql`${dispatchOffers.sentAt} > now() - make_interval(mins => ${OFFER_TTL_MINUTES})`,
           sql`exists (select 1 from ${mechanicProfiles} mp join ${users} u on u.id = mp.user_id
-                      where mp.user_id = ${mechanicId} and mp.is_approved and u.deleted_at is null)`,
+                      where mp.user_id = ${mechanicId} and mp.is_approved
+                        and mp.insurance_expires_on > current_date and u.deleted_at is null)`,
         ))
         .returning({ id: dispatchOffers.id });
       if (offer.length === 0) throw new Unavailable();

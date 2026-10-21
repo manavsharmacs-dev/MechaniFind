@@ -25,8 +25,8 @@ try {
   ]);
   await db.insert(mechanicProfiles).values([
     // Elgin (~7 mi from Pingree Grove), Rockford (~37 mi)
-    { userId: 't_mechA', serviceType: 'mobile', specialties: ['engine', 'electrical'], location: { lng: -88.2812, lat: 42.0354 }, isAvailable: true, isApproved: true, calloutFeeCents: 15000 },
-    { userId: 't_mechB', serviceType: 'mobile', specialties: ['engine'], location: { lng: -89.0940, lat: 42.2711 }, isAvailable: true, isApproved: true },
+    { userId: 't_mechA', serviceType: 'mobile', specialties: ['engine', 'electrical'], location: { lng: -88.2812, lat: 42.0354 }, isAvailable: true, isApproved: true, calloutFeeCents: 15000, insuranceExpiresOn: '2099-01-01' },
+    { userId: 't_mechB', serviceType: 'mobile', specialties: ['engine'], location: { lng: -89.0940, lat: 42.2711 }, isAvailable: true, isApproved: true, insuranceExpiresOn: '2099-01-01' },
     { userId: 't_mechC', serviceType: 'shop', specialties: ['tires'], location: { lng: -88.30, lat: 42.05 }, isAvailable: true, isApproved: false },
   ]);
 
@@ -76,6 +76,10 @@ try {
   await db.update(jobs).set({ status: 'cancelled', cancelledAt: new Date() }).where(eq(jobs.requestId, reqId));
   await db.update(serviceRequests).set({ status: 'dispatching' }).where(eq(serviceRequests.id, reqId));
   await db.update(dispatchOffers).set({ status: 'pending' }).where(eq(dispatchOffers.mechanicId, 't_mechB'));
+  await db.update(mechanicProfiles).set({ insuranceExpiresOn: sql`current_date` }).where(eq(mechanicProfiles.userId, 't_mechB'));
+  const uninsured = await acceptOffer(reqId, 't_mechB');
+  pass('mechanic with expired insurance can\'t accept', !uninsured.ok, JSON.stringify(uninsured));
+  await db.update(mechanicProfiles).set({ insuranceExpiresOn: '2099-01-01' }).where(eq(mechanicProfiles.userId, 't_mechB'));
   const again = await acceptOffer(reqId, 't_mechB');
   pass('after cancellation, request can be re-accepted', again.ok, JSON.stringify(again));
 } finally {

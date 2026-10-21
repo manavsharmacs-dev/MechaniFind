@@ -14,7 +14,9 @@ pass() { [[ "$2" == "$3" ]] && echo "PASS  $1" || echo "FAIL  $1  (expected $3, 
 code_for() { grep "code for $1" "$LOG" | tail -1 | awk '{print $NF}'; }
 st() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 prof() { curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$1" -X "$2" $U/mechanic/profile -d "$3"; }
-GOOD='{"businessName":"Joe'"'"'s Diesel Repair","serviceType":"mobile","specialties":["engine","electrical"],"calloutFeeCents":15000,"serviceRadiusMiles":40,"location":{"lat":42.0354,"lng":-88.2812}}'
+EXP=$(python3 -c "import datetime; print(datetime.date.today() + datetime.timedelta(days=365))")
+BIZ=',"serviceArea":"Elgin to Rockford, I-90","llcNumber":"llc 1234567","llcState":"il","ein":"12-3456789","insuranceProvider":"Progressive Commercial","insurancePolicyNumber":"PC 123-4567","insuranceCoverageDollars":1000000,"insuranceExpiresOn":"'"$EXP"'"'
+GOOD='{"businessName":"Joe'"'"'s Diesel Repair","serviceType":"mobile","specialties":["engine","electrical"],"calloutFeeCents":15000,"serviceRadiusMiles":40,"location":{"lat":42.0354,"lng":-88.2812}'"$BIZ}"
 
 # Sign in a phone account and an email-only account
 P=+18155550201
@@ -37,13 +39,27 @@ pass "negative call-out fee rejected"            "$(prof "$JAR" POST "${GOOD/150
 pass "location outside the US rejected"          "$(prof "$JAR" POST "${GOOD/\{\"lat\":42.0354,\"lng\":-88.2812\}/{\"lat\":51.5,\"lng\":-0.12}}")" 400
 pass "shop without an address rejected"          "$(prof "$JAR" POST "${GOOD/\"mobile\"/\"shop\"}")" 400
 pass "1-letter business name rejected"           "$(prof "$JAR" POST "${GOOD/Joe\'s Diesel Repair/J}")" 400
+pass "mobile without a service area rejected"    "$(prof "$JAR" POST "${GOOD/\"serviceArea\":\"Elgin to Rockford, I-90\",/}")" 400
+pass "missing insurance rejected"                "$(prof "$JAR" POST "${GOOD/\"insurancePolicyNumber\":\"PC 123-4567\",/}")" 400
+pass "already-expired insurance rejected"        "$(prof "$JAR" POST "${GOOD/$EXP/2020-01-01}")" 400
+pass "impossible insurance date rejected"        "$(prof "$JAR" POST "${GOOD/$EXP/2027-02-30}")" 400
+pass "far-future typo date rejected"             "$(prof "$JAR" POST "${GOOD/$EXP/2099-01-01}")" 400
+pass "missing EIN rejected"                      "$(prof "$JAR" POST "${GOOD/\"ein\":\"12-3456789\",/}")" 400
+pass "EIN with wrong digit count rejected"       "$(prof "$JAR" POST "${GOOD/12-3456789/12-345}")" 400
+pass "EIN starting 00 rejected"                  "$(prof "$JAR" POST "${GOOD/12-3456789/00-3456789}")" 400
+pass "made-up state rejected"                    "$(prof "$JAR" POST "${GOOD/\"il\"/\"ZZ\"}")" 400
+pass "letters in USDOT number rejected"          "$(prof "$JAR" POST "${GOOD%\}},\"usdotNumber\":\"12AB\"}")" 400
+pass "zero insurance coverage rejected"          "$(prof "$JAR" POST "${GOOD/1000000/0}")" 400
 
 echo "--- Signing up"
-SNEAKY='{"businessName":"  Joe​'"'"'s   Diesel‮ Repair ","serviceType":"mobile","specialties":["engine","electrical"],"calloutFeeCents":15000,"serviceRadiusMiles":40,"location":{"lat":42.0354,"lng":-88.2812}}'
+SNEAKY='{"businessName":"  Joe​'"'"'s   Diesel‮ Repair ","serviceType":"mobile","specialties":["engine","electrical"],"calloutFeeCents":15000,"serviceRadiusMiles":40,"location":{"lat":42.0354,"lng":-88.2812},"usdotNumber":"USDOT 1234567","mcNumber":"MC-765432"'"$BIZ}"
 R=$(curl -s "${H[@]}" -b "$JAR" -X POST $U/mechanic/profile -d "$SNEAKY")
 pass "profile created as pending"                "$(echo $R | grep -o '"status":"pending"')" '"status":"pending"'
 pass "starts offline (not receiving jobs)"       "$(echo $R | grep -o '"isAvailable":false')" '"isAvailable":false'
 pass "hidden/backwards characters and extra spaces stripped" "$(echo $R | grep -o '"businessName":"[^"]*"')" '"businessName":"Joe'"'"'s Diesel Repair"'
+pass "full EIN never sent back, only last 4"      "$(echo $R | grep -c '123456789')$(echo $R | grep -o '"einLast4":"6789"')" '0"einLast4":"6789"'
+pass "USDOT / MC prefixes stripped"              "$(echo $R | grep -o '"usdotNumber":"1234567","mcNumber":"765432"')" '"usdotNumber":"1234567","mcNumber":"765432"'
+pass "LLC number and state normalized"           "$(echo $R | grep -o '"llcNumber":"LLC1234567","llcState":"IL"')" '"llcNumber":"LLC1234567","llcState":"IL"'
 pass "account is now a mechanic"                 "$(curl -s -b "$JAR" $U/me | grep -o '"role":"mechanic"')" '"role":"mechanic"'
 pass "can't sign up twice"                       "$(prof "$JAR" POST "$GOOD")" 409
 pass "can read own profile"                      "$(st -b "$JAR" $U/mechanic/profile)" 200
@@ -64,7 +80,12 @@ pass "change radius and specialties any time"    "$(prof "$JAR" PATCH '{"service
 pass "price actually saved"                      "$(curl -s -b "$JAR" $U/mechanic/profile | grep -o '"calloutFeeCents":20000')" '"calloutFeeCents":20000'
 weekpass() { npx tsx -e "import('./src/db/index.js').then(async ({db,pool})=>{const {sql}=await import('drizzle-orm');await db.execute(sql\`update mechanic_profiles set name_changed_at = now() - interval '8 days' where user_id = (select id from users where phone_number = '$P')\`);await pool.end();})"; }
 
+dbset() { npx tsx -e "import('./src/db/index.js').then(async ({db,pool})=>{const {sql}=await import('drizzle-orm');await db.execute(sql.raw(\"update mechanic_profiles set $1 where user_id = (select id from users where phone_number = '$P')\"));await pool.end();})"; }
+
 echo "--- Approval & business name"
+dbset "insurance_expires_on = current_date"
+pass "admin can't approve with expired insurance" "$(npm run -s mechanic:approve -- $P >/dev/null 2>&1; echo $?)" 1
+dbset "insurance_expires_on = '$EXP'"
 npm run -s mechanic:approve -- $P >/dev/null
 pass "admin approval works"                      "$(curl -s -b "$JAR" $U/mechanic/profile | grep -o '"status":"[a-z]*"')" '"status":"approved"'
 pass "can't approve yourself via edit"           "$(prof "$JAR" PATCH '{"isApproved":true}')" 400
@@ -74,6 +95,11 @@ R=$(curl -s -w ' %{http_code}' "${H[@]}" -b "$JAR" -X PATCH $U/mechanic/profile 
 pass "second rename in the same week refused"    "${R##* }" 429
 pass "...and says when the next rename is allowed" "$(echo $R | grep -o '"nextNameChangeAt":"20' )" '"nextNameChangeAt":"20'
 pass "prices still editable during the name wait" "$(prof "$JAR" PATCH '{"calloutFeeCents":25000}')" 200
+npm run -s mechanic:approve -- $P >/dev/null
+pass "re-sending the same EIN keeps approval"    "$(curl -s "${H[@]}" -b "$JAR" -X PATCH $U/mechanic/profile -d '{"ein":"123456789"}' | grep -o '"status":"[a-z]*"')" '"status":"approved"'
+pass "new insurance policy needs re-approval"    "$(curl -s "${H[@]}" -b "$JAR" -X PATCH $U/mechanic/profile -d '{"insurancePolicyNumber":"PC-999-0000"}' | grep -o '"status":"[a-z]*"')" '"status":"pending"'
+npm run -s mechanic:approve -- $P >/dev/null
+pass "new EIN needs re-approval"                 "$(curl -s "${H[@]}" -b "$JAR" -X PATCH $U/mechanic/profile -d '{"ein":"98-7654321"}' | grep -o '"status":"[a-z]*"')" '"status":"pending"'
 pass "re-sending the SAME name isn't a rename"   "$(prof "$JAR" PATCH '{"businessName":"Joe Diesel LLC"}')" 200
 weekpass
 pass "a week later: rename allowed again"        "$(prof "$JAR" PATCH '{"businessName":"Another Name Inc"}')" 200
@@ -88,6 +114,10 @@ pass "location ping accepted while online"       "$(ping)" 200
 pass "second ping too soon is refused"           "$(ping)" 429
 sleep 1.1
 pass "ping accepted again after the wait"        "$(ping)" 200
+dbset "insurance_expires_on = current_date"
+pass "expired insurance: can't go online"        "$(avail "{\"available\":true,$LOC}")" 403
+pass "...profile says insurance isn't valid"     "$(curl -s -b "$JAR" $U/mechanic/profile | grep -o '"valid":false')" '"valid":false'
+dbset "insurance_expires_on = '$EXP'"
 pass "location outside the US refused"           "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR" -X POST $U/mechanic/location -d '{"location":{"lat":51.5,"lng":-0.12}}')" 400
 npm run -s mechanic:approve -- $P --revoke >/dev/null
 pass "revoking approval forces them offline"     "$(curl -s -b "$JAR" $U/mechanic/profile | grep -o '"isAvailable":false')" '"isAvailable":false'

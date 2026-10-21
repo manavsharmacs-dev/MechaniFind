@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   pgTable, pgEnum, uuid, text, varchar, integer, boolean, timestamp,
-  doublePrecision, jsonb, index, uniqueIndex, unique, check, foreignKey,
+  doublePrecision, jsonb, date, index, uniqueIndex, unique, check, foreignKey,
   customType, bigint, primaryKey,
 } from 'drizzle-orm/pg-core';
 
@@ -130,6 +130,17 @@ export const mechanicProfiles = pgTable('mechanic_profiles', {
   serviceRadiusMiles: integer('service_radius_miles').notNull().default(50),
   location: geographyPoint('location'),
   shopAddress: varchar('shop_address', { length: 200 }),
+  serviceArea: varchar('service_area', { length: 200 }), // mobile: where they cover, e.g. "Elgin to Rockford, I-90"
+  // Business & insurance details an admin verifies before approval. Changing any needs re-approval.
+  llcNumber: varchar('llc_number', { length: 30 }), // state business entity number
+  llcState: varchar('llc_state', { length: 2 }),
+  ein: varchar('ein', { length: 9 }), // digits only; the API only ever returns the last 4
+  usdotNumber: varchar('usdot_number', { length: 8 }), // optional: only needed if they run commercial vehicles
+  mcNumber: varchar('mc_number', { length: 8 }),
+  insuranceProvider: varchar('insurance_provider', { length: 120 }),
+  insurancePolicyNumber: varchar('insurance_policy_number', { length: 40 }),
+  insuranceCoverageDollars: integer('insurance_coverage_dollars'),
+  insuranceExpiresOn: date('insurance_expires_on', { mode: 'string' }), // no valid insurance = can't go online or accept jobs
   isAvailable: boolean('is_available').notNull().default(false),
   isApproved: boolean('is_approved').notNull().default(false), // only an admin endpoint may change this
   lastLocationAt: timestamp('last_location_at', { withTimezone: true }),
@@ -139,6 +150,11 @@ export const mechanicProfiles = pgTable('mechanic_profiles', {
 }, (t) => [
   check('mechanic_fee_range', sql`${t.calloutFeeCents} is null or ${t.calloutFeeCents} between 0 and 100000`),
   check('mechanic_radius_range', sql`${t.serviceRadiusMiles} between 1 and 100`),
+  check('mechanic_ein_digits', sql`${t.ein} is null or ${t.ein} ~ '^[0-9]{9}$'`),
+  check('mechanic_usdot_digits', sql`${t.usdotNumber} is null or ${t.usdotNumber} ~ '^[0-9]{1,8}$'`),
+  check('mechanic_mc_digits', sql`${t.mcNumber} is null or ${t.mcNumber} ~ '^[0-9]{1,8}$'`),
+  check('mechanic_llc_state', sql`${t.llcState} is null or ${t.llcState} ~ '^[A-Z]{2}$'`),
+  check('mechanic_coverage_range', sql`${t.insuranceCoverageDollars} is null or ${t.insuranceCoverageDollars} between 1 and 100000000`),
   check('mechanic_location_is_point', sql`${t.location} is null or ST_GeometryType(${t.location}::geometry) = 'ST_Point'`),
   // matching search only ever looks at available + approved mechanics
   index('mechanic_match_location_idx').using('gist', t.location)

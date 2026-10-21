@@ -34,6 +34,19 @@ export type MechanicProfile = {
   serviceRadiusMiles: number;
   location: { lat: number; lng: number } | null;
   shopAddress: string | null;
+  serviceArea: string | null;
+  llcNumber: string | null;
+  llcState: string | null;
+  einLast4: string | null;
+  usdotNumber: string | null;
+  mcNumber: string | null;
+  insurance: {
+    provider: string | null;
+    policyNumber: string | null;
+    coverageDollars: number | null;
+    expiresOn: string | null; // YYYY-MM-DD
+    valid: boolean;
+  };
   status: 'pending' | 'approved';
   isAvailable: boolean;
   nextNameChangeAt: string | null;
@@ -47,6 +60,16 @@ export type NewMechanicProfile = {
   serviceRadiusMiles: number;
   location: { lat: number; lng: number };
   shopAddress?: string;
+  serviceArea?: string;
+  llcNumber: string;
+  llcState: string;
+  ein: string;
+  usdotNumber?: string;
+  mcNumber?: string;
+  insuranceProvider: string;
+  insurancePolicyNumber: string;
+  insuranceCoverageDollars: number;
+  insuranceExpiresOn: string; // YYYY-MM-DD
 };
 
 type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string; message?: string; fields?: string[] };
@@ -81,6 +104,16 @@ const FIELD_NAMES: Record<string, string> = {
   serviceRadiusMiles: 'service radius',
   location: 'location',
   shopAddress: 'shop address',
+  serviceArea: 'service area',
+  llcNumber: 'LLC / business number',
+  llcState: 'state',
+  ein: 'EIN',
+  usdotNumber: 'USDOT number',
+  mcNumber: 'MC number',
+  insuranceProvider: 'insurance company',
+  insurancePolicyNumber: 'policy number',
+  insuranceCoverageDollars: 'coverage amount',
+  insuranceExpiresOn: 'insurance expiration date',
 };
 
 /** Turns an API error into one sentence the mechanic can act on. */

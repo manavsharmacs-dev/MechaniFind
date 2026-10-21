@@ -10,6 +10,20 @@ import { AVAILABILITY, QUOTA } from '../protect/limits.js';
 import { MemoryLimiter } from '../protect/memory-limiter.js';
 import { buildDashboard, safeTimeZone } from '../dispatch/dashboard.js';
 
+const US_STATES = [
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS',
+  'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC',
+  'ND', 'OH', 'OK', 'OR', 'PA', 'PR', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+] as const;
+
+const todayUTC = () => new Date().toISOString().slice(0, 10);
+
+/** Uppercases, drops spaces / dashes / "#" and an optional prefix ("USDOT", "MC"), then checks the pattern. */
+const idNumber = (pattern: RegExp, prefix?: RegExp) =>
+  z.string().max(60)
+    .transform((s) => s.toUpperCase().replace(/[\s#-]/g, '').replace(prefix ?? /^$/, ''))
+    .pipe(z.string().regex(pattern));
+
 // ---------- What a mechanic is allowed to send ----------
 // .strict() = any extra field (isApproved, role, userId, ...) gets the request rejected.
 const profileFields = {
@@ -21,10 +35,37 @@ const profileFields = {
   serviceRadiusMiles: z.number().int().min(1).max(100),
   location: usLocation,
   shopAddress: cleanText(5, 200).optional(),
+  serviceArea: cleanText(3, 200).optional(),
+  llcNumber: z.string().max(60).transform((s) => s.toUpperCase().replace(/\s/g, ''))
+    .pipe(z.string().regex(/^[A-Z0-9][A-Z0-9-]{2,29}$/)),
+  llcState: z.string().max(2).transform((s) => s.toUpperCase()).pipe(z.enum(US_STATES)),
+  ein: idNumber(/^(?!00)[0-9]{9}$/), // "12-3456789"
+  usdotNumber: idNumber(/^[0-9]{1,8}$/, /^(US)?DOT/).optional(),
+  mcNumber: idNumber(/^[0-9]{1,8}$/, /^MC/).optional(),
+  insuranceProvider: cleanText(2, 120),
+  insurancePolicyNumber: z.string().max(80).transform((s) => s.toUpperCase().replace(/\s/g, ''))
+    .pipe(z.string().regex(/^[A-Z0-9][A-Z0-9./-]{3,39}$/)),
+  insuranceCoverageDollars: z.number().int().min(1).max(100_000_000),
+  // Must still be valid tomorrow, and a typo like 2099 is rejected (policies run ~1 year).
+  insuranceExpiresOn: z.iso.date().refine((d) => {
+    const today = todayUTC();
+    return d > today && d <= `${Number(today.slice(0, 4)) + 5}${today.slice(4)}`;
+  }),
 };
 
+// The admin verified these — changing any of them sends the profile back for review.
+const REVIEWED_FIELDS = [
+  'businessName', 'shopAddress', 'llcNumber', 'llcState', 'ein', 'usdotNumber', 'mcNumber',
+  'insuranceProvider', 'insurancePolicyNumber', 'insuranceCoverageDollars', 'insuranceExpiresOn',
+] as const;
+
+/** Shops need a real address; mobile mechanics describe the area they cover. */
+const hasPlace = (p: { serviceType: string; shopAddress?: string | null; serviceArea?: string | null }) =>
+  p.serviceType === 'mobile' ? !!p.serviceArea : !!p.shopAddress;
+
 const createSchema = z.object(profileFields).strict()
-  .refine((p) => p.serviceType === 'mobile' || !!p.shopAddress, { path: ['shopAddress'], message: 'required for shops' });
+  .refine((p) => p.serviceType === 'mobile' || !!p.shopAddress, { path: ['shopAddress'], message: 'required for shops' })
+  .refine((p) => p.serviceType !== 'mobile' || !!p.serviceArea, { path: ['serviceArea'], message: 'required for mobile' });
 
 const updateSchema = z.object(profileFields).partial().strict()
   .refine((p) => Object.keys(p).length > 0, 'nothing to update');
@@ -40,6 +81,8 @@ function nextNameChangeAt(p: Profile): Date | null {
   return next > new Date() ? next : null;
 }
 
+const insuranceValid = (p: Profile) => !!p.insuranceExpiresOn && p.insuranceExpiresOn > todayUTC();
+
 /** Only what the mechanic's own app needs — never internal fields. */
 function present(p: Profile) {
   return {
@@ -50,6 +93,19 @@ function present(p: Profile) {
     serviceRadiusMiles: p.serviceRadiusMiles,
     location: p.location,
     shopAddress: p.shopAddress,
+    serviceArea: p.serviceArea,
+    llcNumber: p.llcNumber,
+    llcState: p.llcState,
+    einLast4: p.ein?.slice(-4) ?? null, // the full EIN never leaves the server
+    usdotNumber: p.usdotNumber,
+    mcNumber: p.mcNumber,
+    insurance: {
+      provider: p.insuranceProvider,
+      policyNumber: p.insurancePolicyNumber,
+      coverageDollars: p.insuranceCoverageDollars,
+      expiresOn: p.insuranceExpiresOn,
+      valid: insuranceValid(p),
+    },
     status: p.isApproved ? 'approved' : 'pending',
     isAvailable: p.isAvailable,
     nextNameChangeAt: nextNameChangeAt(p)?.toISOString() ?? null,
@@ -91,6 +147,16 @@ mechanicRoutes.post('/profile', jsonBody(createSchema), async (c) => {
       serviceRadiusMiles: body.serviceRadiusMiles,
       location: body.location,
       shopAddress: body.shopAddress ?? null,
+      serviceArea: body.serviceArea ?? null,
+      llcNumber: body.llcNumber,
+      llcState: body.llcState,
+      ein: body.ein,
+      usdotNumber: body.usdotNumber ?? null,
+      mcNumber: body.mcNumber ?? null,
+      insuranceProvider: body.insuranceProvider,
+      insurancePolicyNumber: body.insurancePolicyNumber,
+      insuranceCoverageDollars: body.insuranceCoverageDollars,
+      insuranceExpiresOn: body.insuranceExpiresOn,
       lastLocationAt: new Date(),
       // Always start unapproved and offline, whatever the app sends.
       isApproved: false,
@@ -115,7 +181,8 @@ mechanicRoutes.get('/profile', async (c) => {
 
 /**
  * Edit the profile. Prices, radius, specialties etc. can change any time.
- * The business name can change once a week, and a new name needs re-approval.
+ * The business name can change once a week. A new name, shop address, or business /
+ * insurance detail needs re-approval.
  */
 mechanicRoutes.patch('/profile', jsonBody(updateSchema), async (c) => {
   const userId = c.get('user').id;
@@ -125,8 +192,10 @@ mechanicRoutes.patch('/profile', jsonBody(updateSchema), async (c) => {
   if (!current) return c.json({ error: 'not_found' }, 404);
 
   const next = { ...current, ...body };
-  if (next.serviceType !== 'mobile' && !next.shopAddress) {
-    return c.json({ error: 'invalid_input', fields: ['shopAddress'] }, 400);
+  // Only checked when the edit touches these, so older profiles can still change prices etc.
+  const touchesPlace = body.serviceType !== undefined || body.shopAddress !== undefined || body.serviceArea !== undefined;
+  if (touchesPlace && !hasPlace(next)) {
+    return c.json({ error: 'invalid_input', fields: [next.serviceType === 'mobile' ? 'serviceArea' : 'shopAddress'] }, 400);
   }
 
   const renaming = body.businessName !== undefined && body.businessName !== current.businessName;
@@ -134,6 +203,7 @@ mechanicRoutes.patch('/profile', jsonBody(updateSchema), async (c) => {
     const waitUntil = nextNameChangeAt(current);
     if (waitUntil) return nameLimit(c, waitUntil);
   }
+  const needsReview = REVIEWED_FIELDS.some((k) => body[k] !== undefined && body[k] !== current[k]);
 
   // Generous abuse cap on edits in general (a real mechanic never gets near it).
   const quota = await useQuota('profile_edit', `user:${userId}`, QUOTA.profileEditsPerUserPerDay, 'day');
@@ -142,8 +212,9 @@ mechanicRoutes.patch('/profile', jsonBody(updateSchema), async (c) => {
   const [updated] = await db.update(mechanicProfiles).set({
     ...body,
     ...(body.location ? { lastLocationAt: new Date() } : {}),
-    // The admin approved a specific business — a new name needs a new look.
-    ...(renaming ? { nameChangedAt: new Date(), isApproved: false, isAvailable: false } : {}),
+    ...(renaming ? { nameChangedAt: new Date() } : {}),
+    // The admin approved a specific business — new details need a new look.
+    ...(needsReview ? { isApproved: false, isAvailable: false } : {}),
   }).where(and(
     eq(mechanicProfiles.userId, userId),
     // Renames: the weekly check is part of the update itself, so two renames sent
@@ -168,17 +239,19 @@ const availabilitySchema = z.object({
 
 /**
  * Go online (receive jobs) or offline.
- * Only approved mechanics can go online, and they must send where they are.
+ * Only approved mechanics with unexpired insurance can go online, and they must send where they are.
  */
 mechanicRoutes.post('/availability', jsonBody(availabilitySchema), async (c) => {
   const userId = c.get('user').id;
   const { available, location } = c.req.valid('json');
 
-  const [current] = await db.select({ isApproved: mechanicProfiles.isApproved })
-    .from(mechanicProfiles).where(eq(mechanicProfiles.userId, userId));
+  const [current] = await db.select().from(mechanicProfiles).where(eq(mechanicProfiles.userId, userId));
   if (!current) return c.json({ error: 'not_found' }, 404);
   if (available && !current.isApproved) {
     return c.json({ error: 'not_approved', message: 'Your profile is still being reviewed.' }, 403);
+  }
+  if (available && !insuranceValid(current)) {
+    return c.json({ error: 'insurance_expired', message: 'Your insurance on file has expired. Update it to go online.' }, 403);
   }
 
   const [updated] = await db.update(mechanicProfiles).set(
@@ -188,7 +261,7 @@ mechanicRoutes.post('/availability', jsonBody(availabilitySchema), async (c) => 
   ).where(and(
     eq(mechanicProfiles.userId, userId),
     // Re-checked inside the update: approval can't be revoked between the check and the write.
-    available ? eq(mechanicProfiles.isApproved, true) : undefined,
+    available ? and(eq(mechanicProfiles.isApproved, true), sql`${mechanicProfiles.insuranceExpiresOn} > current_date`) : undefined,
   )).returning();
   if (!updated) return c.json({ error: 'not_approved', message: 'Your profile is still being reviewed.' }, 403);
   return c.json(present(updated));
