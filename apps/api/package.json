@@ -10,6 +10,9 @@
     "test:protect": "zsh scripts/protecttest.sh",
     "test:race": "tsx scripts/racetest.mts",
     "mechanic:approve": "tsx scripts/approve-mechanic.mts",
+    "admin:log": "tsx scripts/audit-log.mts",
+    "db:protect-audit": "tsx scripts/db-protect-audit.mts",
+    "test:audit": "tsx scripts/audittest.mts",
     "test:mechanic": "zsh scripts/mechanictest.sh"
   },
   "dependencies": {

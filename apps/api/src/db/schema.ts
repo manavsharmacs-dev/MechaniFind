@@ -296,3 +296,31 @@ export const usageCounters = pgTable('usage_counters', {
   primaryKey({ columns: [t.scope, t.action, t.windowStart] }),
   index('usage_counters_window_idx').on(t.windowStart),
 ]);
+
+// ---------- Admin audit log ----------
+// One row every time an admin views or changes something: who, what, when, result.
+// Append-only: database triggers (scripts/db-protect-audit.mts) refuse UPDATE,
+// DELETE and TRUNCATE, and stamp `at` with the database clock so it can't be backdated.
+// No foreign keys on purpose: deleting a user must never delete or block their history.
+// Never put secrets here (full EIN, codes, tokens) — ids and field names only.
+export const AUDIT_SOURCES = ['cli', 'api', 'test'] as const;
+export const AUDIT_OUTCOMES = ['ok', 'refused'] as const;
+
+export const adminAuditLog = pgTable('admin_audit_log', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  at: timestamp('at', { withTimezone: true }).notNull().defaultNow(),
+  actorUserId: text('actor_user_id'),                      // admin's account (admin panel); null for the command-line tool
+  actor: varchar('actor', { length: 200 }).notNull(),      // readable "who", e.g. "manavsharma@Manavs-MacBook-Air"
+  source: varchar('source', { length: 10 }).notNull(),     // cli | api | test
+  action: varchar('action', { length: 60 }).notNull(),     // e.g. "mechanic.approve"
+  outcome: varchar('outcome', { length: 10 }).notNull(),   // ok | refused
+  targetType: varchar('target_type', { length: 30 }),      // e.g. "mechanic"
+  targetId: text('target_id'),                             // e.g. the mechanic's user id
+  details: jsonb('details').notNull().default({}),         // before/after values, ids shown, reason refused
+}, (t) => [
+  check('audit_source_valid', sql`${t.source} in ('cli', 'api', 'test')`),
+  check('audit_outcome_valid', sql`${t.outcome} in ('ok', 'refused')`),
+  check('audit_details_size', sql`octet_length(${t.details}::text) <= 16000`),
+  index('audit_at_idx').on(t.at),
+  index('audit_target_idx').on(t.targetType, t.targetId),
+]);

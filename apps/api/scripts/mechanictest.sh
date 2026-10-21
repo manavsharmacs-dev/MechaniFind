@@ -1,6 +1,7 @@
 #!/bin/zsh
 # Step 1a tests: becoming a mechanic. Starts its own server, cleans up after.
 cd "$(dirname "$0")/.."
+export MF_AUDIT_SOURCE=test  # admin-tool runs here are logged as tests
 npx tsx scripts/authtest-cleanup.mts >/dev/null
 LOG=$(mktemp); JAR=$(mktemp); JAR2=$(mktemp)
 PORT=3999 LOCATION_PING_SECONDS=1 TRUST_PROXY_HEADER=x-forwarded-for npx tsx src/index.ts > "$LOG" 2>&1 &
