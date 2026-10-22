@@ -324,3 +324,25 @@ export const adminAuditLog = pgTable('admin_audit_log', {
   index('audit_at_idx').on(t.at),
   index('audit_target_idx').on(t.targetType, t.targetId),
 ]);
+
+// ---------- Contact-change approvals ----------
+// Replacing an existing email or phone needs a code sent to the OLD one first.
+// One row per account per channel; starting a new change replaces the old row.
+// The approval is tied to the exact new value, so it can't be reused for a different address.
+export const CONTACT_CHANNELS = ['email', 'phone'] as const;
+
+export const contactChangeApprovals = pgTable('contact_change_approvals', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  channel: varchar('channel', { length: 5 }).notNull(),        // email | phone
+  newValue: varchar('new_value', { length: 254 }).notNull(),   // the exact email/phone being approved
+  codeHash: varchar('code_hash', { length: 64 }).notNull(),    // HMAC of the code; the code itself is never stored
+  attempts: integer('attempts').notNull().default(0),          // wrong guesses so far (max 3)
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(), // code expiry, then approval expiry
+  approvedAt: timestamp('approved_at', { withTimezone: true }), // set once the old contact's code is correct
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.channel] }),
+  check('contact_change_channel_valid', sql`${t.channel} in ('email', 'phone')`),
+  check('contact_change_attempts_range', sql`${t.attempts} between 0 and 3`),
+  index('contact_change_expires_idx').on(t.expiresAt),
+]);

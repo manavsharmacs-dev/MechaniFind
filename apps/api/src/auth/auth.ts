@@ -1,20 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { createAuthMiddleware, APIError, getSessionFromCtx } from 'better-auth/api';
+import { createAuthMiddleware, APIError, getSessionFromCtx, isAPIError } from 'better-auth/api';
+import { and, eq, gt, isNotNull, sql } from 'drizzle-orm';
 import { phoneNumber, emailOTP, captcha } from 'better-auth/plugins';
 import { expo } from '@better-auth/expo';
 import { env } from '../env.js';
 import { db } from '../db/index.js';
-import { users, sessions, accounts, verifications, rateLimits } from '../db/schema.js';
+import { users, sessions, accounts, verifications, rateLimits, contactChangeApprovals } from '../db/schema.js';
 import { sendEmailCode, sendSignInCode } from './send-code.js';
-import { emailProblem, normalizeEmail, PLACEHOLDER_EMAIL_DOMAIN } from './email.js';
+import { emailProblem, isPlaceholderEmail, normalizeEmail, PLACEHOLDER_EMAIL_DOMAIN } from './email.js';
 import { useBudget, useQuota } from '../protect/quota.js';
 import { ACCOUNT, QUOTA } from '../protect/limits.js';
 
 // US numbers only (+1, valid area code and exchange). Blocks international
 // "SMS pumping" fraud, where bots trigger texts to expensive foreign numbers.
-const US_PHONE = /^\+1[2-9][0-9]{2}[2-9][0-9]{6}$/;
+export const US_PHONE = /^\+1[2-9][0-9]{2}[2-9][0-9]{6}$/;
 
 /** The ONLY sign-in endpoints the app uses. Everything else Better Auth offers is switched off. */
 export const ALLOWED_AUTH_ROUTES = new Set([
@@ -40,7 +41,7 @@ const tooManyTries = () => new APIError('TOO_MANY_REQUESTS', { message: 'Too man
 const paused = () => new APIError('SERVICE_UNAVAILABLE', { message: 'Sign-in is temporarily unavailable. Please try again later.' });
 
 /** Quotas shared by every "send a code" route: per address, per IP, and the app-wide daily budget. */
-async function guardCodeSend(kind: 'sms' | 'email', address: string, ip: string) {
+export async function guardCodeSend(kind: 'sms' | 'email', address: string, ip: string) {
   const perHour = kind === 'sms' ? QUOTA.smsPerPhonePerHour : QUOTA.emailPerAddressPerHour;
   const perDay = kind === 'sms' ? QUOTA.smsPerPhonePerDay : QUOTA.emailPerAddressPerDay;
   const hour = await useQuota(kind, `${kind}:${address}`, perHour, 'hour');
@@ -59,14 +60,45 @@ async function guardCodeSend(kind: 'sms' | 'email', address: string, ip: string)
  * their own email/phone and locking the owner out. Session refreshes never change createdAt,
  * so an old session can't become "recent" by being used.
  */
+export function signedInRecently(sessionCreatedAt: Date | string): boolean {
+  return Date.now() - new Date(sessionCreatedAt).getTime() < ACCOUNT.contactChangeFreshMinutes * 60_000;
+}
+
 async function requireRecentSignIn(ctx: Parameters<typeof getSessionFromCtx>[0]) {
   const s = await getSessionFromCtx(ctx);
-  if (!s?.session) return; // not signed in: the route itself refuses
-  const ageMs = Date.now() - new Date(s.session.createdAt).getTime();
-  if (ageMs >= ACCOUNT.contactChangeFreshMinutes * 60_000) {
+  if (!s?.session) return null; // not signed in: the route itself refuses
+  if (!signedInRecently(s.session.createdAt)) {
     throw new APIError('FORBIDDEN', {
       message: 'For your security, sign in again to add or change your email or phone number.',
       code: 'REAUTH_REQUIRED',
+    });
+  }
+  return s.user;
+}
+
+/**
+ * Replacing an EXISTING email/phone needs an approval from the old one (fix B):
+ * POST /account/contact-change/start + /confirm, tied to this exact new value, unexpired.
+ * Adding a first email/phone doesn't (fix A covers it).
+ */
+async function requireOldContactApproval(
+  user: { id: string; email: string; phoneNumber?: string | null; phoneNumberVerified?: boolean | null },
+  channel: 'email' | 'phone',
+  newValue: string,
+) {
+  const hasOne = channel === 'email' ? !isPlaceholderEmail(user.email) : !!(user.phoneNumber && user.phoneNumberVerified);
+  if (!hasOne) return;
+  const [ok] = await db.select({ one: sql`1` }).from(contactChangeApprovals).where(and(
+    eq(contactChangeApprovals.userId, user.id),
+    eq(contactChangeApprovals.channel, channel),
+    eq(contactChangeApprovals.newValue, newValue),
+    isNotNull(contactChangeApprovals.approvedAt),
+    gt(contactChangeApprovals.expiresAt, sql`now()`),
+  ));
+  if (!ok) {
+    throw new APIError('FORBIDDEN', {
+      message: `To replace your ${channel === 'email' ? 'email' : 'phone number'}, first confirm with a code sent to your current one.`,
+      code: 'OLD_CONTACT_APPROVAL_REQUIRED',
     });
   }
 }
@@ -162,14 +194,20 @@ export const auth = betterAuth({
         // ----- Code guessing: at most N attempts per phone/email per hour, across all codes and IPs -----
         case '/phone-number/verify': {
           // Signed in and adding/replacing a phone (same truthiness test the library uses).
-          if (body.updatePhoneNumber) await requireRecentSignIn(ctx);
+          if (body.updatePhoneNumber) {
+            const user = await requireRecentSignIn(ctx);
+            if (user) await requireOldContactApproval(user, 'phone', String(body.phoneNumber ?? ''));
+          }
           const tries = await useQuota('verify', `phone:${String(body.phoneNumber ?? '')}`, QUOTA.verifyAttemptsPerPhonePerHour, 'hour');
           if (!tries.ok) throw tooManyTries();
           return;
         }
         case '/sign-in/email-otp':
         case '/email-otp/change-email': {
-          if (ctx.path === '/email-otp/change-email') await requireRecentSignIn(ctx);
+          if (ctx.path === '/email-otp/change-email') {
+            const user = await requireRecentSignIn(ctx);
+            if (user) await requireOldContactApproval(user, 'email', normalizeEmail(body.newEmail));
+          }
           const email = normalizeEmail(ctx.path === '/sign-in/email-otp' ? body.email : body.newEmail);
           const tries = await useQuota('verify_email', `email:${email}`, QUOTA.verifyAttemptsPerEmailPerHour, 'hour');
           if (!tries.ok) throw tooManyTries();
@@ -188,9 +226,30 @@ export const auth = betterAuth({
           if (body.type !== 'sign-in') throw new APIError('BAD_REQUEST', { message: 'Unsupported request' });
           return guardCodeSend('email', checkEmail(body.email), ip);
         }
-        case '/email-otp/request-email-change':
-          await requireRecentSignIn(ctx);
+        case '/email-otp/request-email-change': {
+          // Checked BEFORE a code goes to the new address, so an attacker's inbox never gets one.
+          const user = await requireRecentSignIn(ctx);
+          if (user) await requireOldContactApproval(user, 'email', normalizeEmail(body.newEmail));
           return guardCodeSend('email', checkEmail(body.newEmail), ip);
+        }
+      }
+    }),
+
+    // After a contact change SUCCEEDS, its approval is used up (fix B).
+    // Failed attempts keep it, so a mistyped new-contact code can be retried within the 10 minutes.
+    after: createAuthMiddleware(async (ctx) => {
+      const body = (ctx.body ?? {}) as Record<string, unknown>;
+      const channel = ctx.path === '/email-otp/change-email' ? 'email'
+        : ctx.path === '/phone-number/verify' && body.updatePhoneNumber ? 'phone' : null;
+      if (!channel || isAPIError((ctx.context as { returned?: unknown }).returned)) return;
+      const s = await getSessionFromCtx(ctx);
+      if (!s?.user) return;
+      try {
+        await db.delete(contactChangeApprovals)
+          .where(and(eq(contactChangeApprovals.userId, s.user.id), eq(contactChangeApprovals.channel, channel)));
+      } catch (e) {
+        // The change already happened. A leftover approval only allows the same value again and expires in 10 min.
+        console.error('[contact-change] could not clear approval', (e as Error).name);
       }
     }),
   },

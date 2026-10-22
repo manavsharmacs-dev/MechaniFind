@@ -13,6 +13,7 @@ import { requireAuth, type AuthVars } from './auth/middleware.js';
 import { isPlaceholderEmail } from './auth/email.js';
 import { mechanicRoutes } from './routes/mechanic.js';
 import { requestRoutes } from './routes/requests.js';
+import { accountRoutes } from './routes/account.js';
 import { protect, tooMany } from './protect/middleware.js';
 import { MemoryLimiter } from './protect/memory-limiter.js';
 import { clientIp } from './protect/client-ip.js';
@@ -99,6 +100,11 @@ app.route('/mechanic', mechanicRoutes);
 // GET  /requests/current      your open breakdown
 // POST /requests/:id/cancel   cancel it
 app.route('/requests', requestRoutes);
+
+// ---------- Account security ----------
+// POST /account/contact-change/start     code to your CURRENT email/phone to approve replacing it
+// POST /account/contact-change/confirm   check that code
+app.route('/account', accountRoutes);
 
 const server = serve({ fetch: app.fetch, hostname: env.HOST, port: env.PORT }, (info) => {
   console.log(`API running on http://${info.address}:${info.port}`);

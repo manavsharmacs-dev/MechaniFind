@@ -82,7 +82,18 @@ pass "link: confirm new email with code"   "$(curl -s -o /dev/null -w '%{http_co
 esend $E2 10.9.0.3 >/dev/null; rm -f "$JAR"; esignin $E2 $(code_for $E2) 10.9.0.3 $JAR >/dev/null
 pass "link: signing in by the added email opens the SAME account" "$(myid "$JAR")" "$PHONE_ID"
 
-# 8. Can't take over someone else's email
+# 8. Replacing an existing email needs the OLD email's approval (fix B)
+U=http://localhost:3999
+approve() { # jar, channel, newValue, ip, oldAddress  → prints confirm's http status
+  curl -s -o /dev/null "${H[@]}" -b "$1" -H "x-forwarded-for: $4" -X POST $U/account/contact-change/start -d "{\"channel\":\"$2\",\"newValue\":\"$3\"}"
+  curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$1" -H "x-forwarded-for: $4" -X POST $U/account/contact-change/confirm -d "{\"channel\":\"$2\",\"code\":\"$(code_for $5)\"}"
+}
+R=$(curl -s -w ' %{http_code}' "${H[@]}" -b "$JAR3" -H 'origin: http://localhost:3000' -H 'x-forwarded-for: 10.9.0.5' -X POST $B/email-otp/request-email-change -d "{\"newEmail\":\"$E1\"}")
+pass "replace: without the old email's approval, refused" "${R##* }" 403
+pass "...and says why"                        "$(echo $R | grep -o OLD_CONTACT_APPROVAL_REQUIRED)" OLD_CONTACT_APPROVAL_REQUIRED
+pass "replace: old email approves (code sent to $E2)" "$(approve "$JAR3" email "$E1" 10.9.0.6 "$E2")" 200
+
+# 8a. Even with approval, can't take over someone else's email
 pass "steal: requesting another user's email looks normal" "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR3" -H 'origin: http://localhost:3000' -H 'x-forwarded-for: 10.9.0.4' -X POST $B/email-otp/request-email-change -d "{\"newEmail\":\"$E1\"}")" 200
 grep -q "Email code for $E1" <(grep -c "" "$LOG" >/dev/null; awk -v e="$E1" 'index($0,"Email code for " e)' "$LOG" | tail -n +2) && echo "FAIL  steal: a code was sent to the owner's inbox" || echo "PASS  steal: no code is sent, so the email can't be claimed"
 pass "steal: guessing the change code fails" "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR3" -H 'origin: http://localhost:3000' -H 'x-forwarded-for: 10.9.0.4' -X POST $B/email-otp/change-email -d "{\"newEmail\":\"$E1\",\"otp\":\"123456\"}")" 400
@@ -104,8 +115,10 @@ pass "fresh: 11-min-old session can't add/replace a phone" "$(curl -s -o /dev/nu
 pass "fresh: phone number unchanged"        "$(curl -s -b "$JAR3" localhost:3999/me | grep -o "\"phoneNumber\":\"$P6\"")" "\"phoneNumber\":\"$P6\""
 pass "fresh: the old session still works for everything else" "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR3" localhost:3999/me)" 200
 age 9
+pass "fresh: 9-min-old session can get the old email's approval" "$(approve "$JAR3" email "$E3" 10.10.0.6 "$E2")" 200
 pass "fresh: 9-min-old session can still change contacts" "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR3" "${OH[@]}" -H 'x-forwarded-for: 10.10.0.3' -X POST $B/email-otp/request-email-change -d "{\"newEmail\":\"$E3\"}")" 200
 age 60
+pass "fresh: an approval doesn't help an old session" "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR3" "${OH[@]}" -H 'x-forwarded-for: 10.10.0.7' -X POST $B/email-otp/request-email-change -d "{\"newEmail\":\"$E3\"}")" 403
 JAR4=$(mktemp); send $P6 10.10.0.4 >/dev/null
 curl -s -o /dev/null "${H[@]}" -c "$JAR4" -H 'x-forwarded-for: 10.10.0.4' -X POST $B/phone-number/verify -d "{\"phoneNumber\":\"$P6\",\"code\":\"$(code_for $P6)\"}"
 pass "fresh: signing in again unlocks contact changes" "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -b "$JAR4" "${OH[@]}" -H 'x-forwarded-for: 10.10.0.5' -X POST $B/email-otp/request-email-change -d "{\"newEmail\":\"$E3\"}")" 200
