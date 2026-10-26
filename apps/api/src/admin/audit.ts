@@ -18,6 +18,7 @@ export type AuditAction =
   | 'mechanic.list'     // viewed mechanic profiles (includes business + insurance details)
   | 'mechanic.approve'  // approved a mechanic
   | 'mechanic.revoke'   // revoked a mechanic's approval
+  | 'user.set_contact'  // support replaced a user's email/phone (they lost access to the old one)
   | 'audit.view';       // read this log
 
 export type AuditActor = {
@@ -29,13 +30,18 @@ export type AuditActor = {
 export type AuditEntry = AuditActor & {
   action: AuditAction;
   outcome?: (typeof AUDIT_OUTCOMES)[number];
-  targetType?: 'mechanic' | 'audit_log';
+  targetType?: 'mechanic' | 'audit_log' | 'user';
   targetId?: string | null;
   details?: Record<string, unknown>;
 };
 
 // Keys that must never appear in a log row, at any depth.
-const FORBIDDEN_KEYS = new Set(['ein', 'password', 'token', 'secret', 'otp', 'code', 'cookie']);
+// Raw contact keys are refused too: log masked values under names like "oldMasked" instead,
+// so the log (which can never be deleted) doesn't become a list of everyone's email and phone.
+const FORBIDDEN_KEYS = new Set([
+  'ein', 'password', 'token', 'secret', 'otp', 'code', 'cookie',
+  'email', 'phone', 'phonenumber', 'newvalue', 'oldvalue',
+]);
 
 function assertNoSecrets(value: unknown, path = 'details'): void {
   if (Array.isArray(value)) { value.forEach((v, i) => assertNoSecrets(v, `${path}[${i}]`)); return; }
